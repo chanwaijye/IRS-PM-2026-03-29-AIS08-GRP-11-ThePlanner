@@ -1,0 +1,5 @@
+Group: GRP-11
+Cohort: AIS08
+Full Name: Chan Wai Jye
+Student ID: A0340644J 
+Repo: https://github.com/chanwaijye/IRS-PM-2026-03-29-AIS08-GRP-11-ThePlanner
