@@ -1,0 +1,6 @@
+dpi: 300
+strict: false
+format: PNG
+
+mermaid:
+  executable: /home/wjchan/.nvm/versions/node/v22.15.0/lib/node_modules/mermaid-filter/node_modules/.bin/mmdc
