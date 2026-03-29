@@ -1,59 +1,57 @@
-﻿### [ Practice Module ] Project Submission Template: Github Repository & Zip File
+### [ Practice Module ] Project Submission Template: Github Repository & Zip File
 
 **[ Naming Convention ]** CourseCode-StartDate-BatchCode-TeamName-ProjectName.zip
 
-* **[ MTech Thru-Train Group Project Naming Example ]** IRS-PM-2020-01-18-IS02PT-GRP-AwsomeSG-HDB_BTO_Recommender.zip
-
-* **[ MTech Stackable Group Project Naming Example ]** IRS-PM-2020-01-18-STK02-GRP-AwsomeSG-HDB_BTO_Recommender.zip
-
-[Online editor for this README.md markdown file](https://pandao.github.io/editor.md/en.html "pandao")
-
----
-
-### <<<<<<<<<<<<<<<<<<<< Start of Template >>>>>>>>>>>>>>>>>>>>
+* **[ MTech Stackable Group Project Naming Example ]** IRS-PM-2026-03-29-AIS08-GRP-11-ThePlanner.zip
 
 ---
 
 ## SECTION 1 : PROJECT TITLE
-## Singapore Housing & Deveoplment Board - BTO Recommender System
-
-<img src="SystemCode/clips/static/hdb-bto.png"
-     style="float: left; margin-right: 0px;" />
+## THE PLANNER — Symbolic + Neural Task Reasoning for Robot Manipulation
 
 ---
 
 ## SECTION 2 : EXECUTIVE SUMMARY / PAPER ABSTRACT
-Singapore ranks amongst countries with the highest population density in the world. In a bid to have firm control over long term urban planning, the Singapore government came up with the “Built to Order” (abbreviated BTO) initiative back in 2001. These are new Housing Development Board (HDB) flats tightly controlled by their eligibility and quantity released every year. In more recent years, the modern BTO scheme in Singapore requires a waiting period of 3-4 years, and is generally targeted at young Singaporean couples looking to purchase their first property and set up a family. Nationality and income ceilings are some of the broad filters that determine one’s eligibility for the highly sought after projects. 
 
+Robots in warehouse logistics, hospital supply chains, and light manufacturing today rely on hard-coded task scripts that break whenever object placement, task ordering, or the environment changes. The Planner addresses this gap with a five-agent AI system that accepts a natural language task instruction, reasons symbolically about how to accomplish it, perceives the scene to verify preconditions, executes the plan with GPU-accelerated motion planning, and automatically recovers from failures — all without human reprogramming.
 
-Our team, comprising of 6 young Singaporeans, all hope to be property owners one day. Many of our peers opt for BTO flats due to their affordability, existence of financial aid from the government, as well as their resale value. However, there often exists a knowledge gap for these young couples during the decision making process and they end up making potentially regretful decisions. We would like to bridge this knowledge gap, and have hence chosen to base our project on creating a recommender system for BTO flats, utilizing the data from recent launches in Tampines, Eunos, Sengkang and Punggol. 
+The core technical contribution is a custom C++ PDDL planner implementing A\* search with an h+ relaxed-plan heuristic and a Genetic Algorithm plan ranker for multi-objective optimisation. The system covers all four IRS technique groups:
 
+| Technique Group | Implementation |
+|---|---|
+| Decision Automation | Custom C++ PDDL A\* Planner |
+| Business Resource Optimisation | Genetic Algorithm plan ranker |
+| Knowledge Discovery & Data Mining | FoundationPose 6-DoF pose estimation + scene graph |
+| Cognitive Systems | LLaMA-3 NL interface + NetworkX knowledge graph |
 
-Using the techniques imparted to us in lectures, our group first set out to build a sizeable knowledge base via conducting an interview and administering a survey. While building the system, we utilized tools such as Java to scrape real time data from HDB website and transform it into a database, CLIPS to synthesize the rule based reasoning process, and Python to integrate it into an easy to use UI for the everyday user. To add icing on the cake, we even hosted the system on a website so that the everyday user can access it through the click of a link.
-
-
-Our team had an amazing time working on this project, and hope to share our insights with everyone. Despite a focus on BTO flats, we would recommend it for everybody interested in understanding property market trends for residence or investment purposes. There truly are a wide array of factors behind the decision to invest in a property, and we only wish there was more time to work on the scope and scale of the project. 
+The entire system runs in NVIDIA Isaac Sim at zero software cost, using the Franka Research 3 robot arm on a tabletop manipulation domain with up to 6 objects.
 
 ---
 
 ## SECTION 3 : CREDITS / PROJECT CONTRIBUTION
 
-| Official Full Name  | Student ID (MTech Applicable)  | Work Items (Who Did What) | Email (Optional) |
+| Official Full Name | Student ID | Work Items | Email |
 | :------------ |:---------------:| :-----| :-----|
-| Desmond Chua | A1234567A | xxxxxxxxxx yyyyyyyyyy zzzzzzzzzz| A1234567A@nus.edu.sg |
-| Chang Ye Han | A1234567B | xxxxxxxxxx yyyyyyyyyy zzzzzzzzzz| A1234567B@gmail.com |
-| Chee Jia Wei | A1234567C | xxxxxxxxxx yyyyyyyyyy zzzzzzzzzz| A1234567C@outlook.com |
-| Ganesh Kumar | A1234567D | xxxxxxxxxx yyyyyyyyyy zzzzzzzzzz| A1234567D@yahoo.com |
-| Jeanette Lim | A1234567E | xxxxxxxxxx yyyyyyyyyy zzzzzzzzzz| A1234567E@qq.com |
+| Chan Wai Jye | A0340644J | All system architecture, PDDL domain design, C++ planner implementation, agent integration, report, videos. Solo submission — AI-assisted development. | A0340644J@nus.edu.sg |
+
+**AI Development Tools Used:**
+
+| Tool | Role |
+|---|---|
+| Claude Chat (Anthropic) | Architecture design, literature review, proposal drafting, report writing |
+| Claude Code (Anthropic) | Orchestrates 5 coding subagents for module implementation |
+| GitHub Copilot (optional) | Boilerplate C++ code completion |
+
+All AI-generated outputs are reviewed and validated by the team leader. Full AI usage disclosure in Appendix A of the project report.
 
 ---
 
 ## SECTION 4 : VIDEO OF SYSTEM MODELLING & USE CASE DEMO
 
-[![Sudoku AI Solver](http://img.youtube.com/vi/-AiYLUjP6o8/0.jpg)](https://youtu.be/-AiYLUjP6o8 "Sudoku AI Solver")
+> Videos will be uploaded by the final submission deadline (3 May 2026).
 
-Note: It is not mandatory for every project member to appear in video presentation; Presentation by one project member is acceptable. 
-More reference video presentations [here](https://telescopeuser.wordpress.com/2018/03/31/master-of-technology-solution-know-how-video-index-2/ "video presentations")
+- **Promo video (5 min)** — business pain, live use-case demo in Isaac Sim, pricing/value proposition.
+- **Technical video (5 min)** — system architecture walkthrough, C++ planner code explanation, agent pipeline demo.
 
 ---
 
@@ -61,65 +59,84 @@ More reference video presentations [here](https://telescopeuser.wordpress.com/20
 
 `Refer to appendix <Installation & User Guide> in project report at Github Folder: ProjectReport`
 
-### [ 1 ] To run the system using iss-vm
+### Prerequisites
 
-> download pre-built virtual machine from http://bit.ly/iss-vm
+| Requirement | Version | Notes |
+|---|---|---|
+| Ubuntu | 22.04 LTS | Preferred OS |
+| NVIDIA GPU | RTX 3070+ (8GB VRAM min) | RTX 4080+ (16GB) recommended |
+| NVIDIA Isaac Sim | 4.x | Free — NVIDIA Developer Program |
+| ROS2 | Humble | Robot middleware |
+| CMake | 3.20+ | C++ build system |
+| GCC | 11/12 | C++17 support |
+| Ollama | Latest | Local LLM runtime |
+| Python | 3.11 | Agent 1 + Agent 5 |
+| Node.js | 18+ | Web UI |
 
-> start iss-vm
+### Build & Run
 
-> open terminal in iss-vm
+```bash
+# 1. Clone the repository
+git clone https://github.com/chanwaijye/IRS-PM-2026-03-29-AIS08-GRP-11-ThePlanner.git
+cd IRS-PM-2026-03-29-AIS08-GRP-11-ThePlanner
 
-> $ git clone https://github.com/telescopeuser/Workshop-Project-Submission-Template.git
+# 2. Install LLaMA-3 via Ollama
+ollama pull llama3:8b
 
-> $ source activate iss-env-py2
+# 3. Build the C++ PDDL planner
+cd SystemCode/planner
+mkdir build && cd build
+cmake .. && make -j$(nproc)
 
-> (iss-env-py2) $ cd Workshop-Project-Submission-Template/SystemCode/clips
+# 4. Launch Isaac Sim environment
+# (Follow NVIDIA Isaac Sim installation guide first)
 
-> (iss-env-py2) $ python app.py
-
-> **Go to URL using web browser** http://0.0.0.0:5000 or http://127.0.0.1:5000
-
-### [ 2 ] To run the system in other/local machine:
-### Install additional necessary libraries. This application works in python 2 only.
-
-> $ sudo apt-get install python-clips clips build-essential libssl-dev libffi-dev python-dev python-pip
-
-> $ pip install pyclips flask flask-socketio eventlet simplejson pandas
+# 5. Start the agent pipeline
+# (Detailed instructions in project report appendix)
+```
 
 ---
+
 ## SECTION 6 : PROJECT REPORT / PAPER
 
 `Refer to project report at Github Folder: ProjectReport`
 
-**Recommended Sections for Project Report / Paper:**
-- Executive Summary / Paper Abstract
-- Sponsor Company Introduction (if applicable)
+- **Proposal:** [ProjectReport/Proposal/](ProjectReport/Proposal/)
+
+**Report Sections:**
+- Executive Summary
 - Business Problem Background
 - Market Research
 - Project Objectives & Success Measurements
-- Project Solution (To detail domain modelling & system design.)
-- Project Implementation (To detail system development & testing approach.)
-- Project Performance & Validation (To prove project objectives are met.)
+- Project Solution (domain modelling & system design)
+- Project Implementation (system development & testing)
+- Project Performance & Validation
 - Project Conclusions: Findings & Recommendation
-- Appendix of report: Project Proposal
-- Appendix of report: Mapped System Functionalities against knowledge, techniques and skills of modular courses: MR, RS, CGS
-- Appendix of report: Installation and User Guide
-- Appendix of report: 1-2 pages individual project report per project member, including: Individual reflection of project journey: (1) personal contribution to group project (2) what learnt is most useful for you (3) how you can apply the knowledge and skills in other situations or your workplaces
-- Appendix of report: List of Abbreviations (if applicable)
-- Appendix of report: References (if applicable)
+- Appendix: Project Proposal
+- Appendix: Mapped System Functionalities against MR, RS, CGS
+- Appendix: Installation and User Guide
+- Appendix: Individual project report
+- Appendix: List of Abbreviations
+- Appendix: References
 
 ---
+
 ## SECTION 7 : MISCELLANEOUS
 
 `Refer to Github Folder: Miscellaneous`
 
-### HDB_BTO_SURVEY.xlsx
-* Results of survey
-* Insights derived, which were subsequently used in our system
+### System Architecture
 
----
+Five-agent pipeline: NL Interface (LLaMA-3) → Planner (C++ PDDL A\* + GA) → Perception (FoundationPose) → Executor (cuMotion) → Monitor (C++ rules + BT). Agents communicate via ROS2 topics/services with a FastAPI REST layer for the web UI.
 
-### <<<<<<<<<<<<<<<<<<<< End of Template >>>>>>>>>>>>>>>>>>>>
+### Key Technologies
+
+- NVIDIA Isaac Sim / Omniverse — photorealistic robot simulation
+- Isaac ROS cuMotion / cuRobo — GPU-accelerated motion planning
+- FoundationPose — 6-DoF object pose estimation
+- Omniverse Replicator — synthetic training data generation
+- LLaMA-3:8b via Ollama — local LLM for NL-to-PDDL translation
+- NetworkX — object affordance knowledge graph
 
 ---
 
