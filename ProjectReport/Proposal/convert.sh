@@ -9,4 +9,6 @@ pandoc "$DIR/$BASENAME.md" \
   --filter pandoc-plot \
   --metadata plot-configuration="$DIR/pandoc-plot.yml"
 
+python3 "$DIR/format_docx.py" "$DIR/$BASENAME.docx"
+
 echo "Done: $DIR/$BASENAME.docx"

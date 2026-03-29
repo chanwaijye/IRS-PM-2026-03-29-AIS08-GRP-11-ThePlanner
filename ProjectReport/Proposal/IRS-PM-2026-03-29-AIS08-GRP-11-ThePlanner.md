@@ -293,7 +293,7 @@ flowchart TD
 | Wk 5 | Apr 12–18 | Agent integration sprint: NL → LLaMA-3 → PDDL → C++ Planner → plan JSON → cuMotion → Isaac Sim execution. End-to-end test on 3 benchmark tasks. |
 | Wk 6 | Apr 19–25 | GA plan optimiser. Monitor agent failure-detection + replanning loop. FastAPI hardening. React + Three.js web UI. Promo video (5 min) + technical video (5 min) recording. |
 | **★ Wk 7** | **May 3 (DEADLINE)** | **FINAL SUBMISSION DUE 23:59.** GitHub repo zip, 2 videos, group project report PDF, individual peer review forms. |
-| Wk 8 | May 5–16 | WRITTEN EXAMINATION — 3-hour open-book individual exam. No internet access. |
+
 
 ---
 
