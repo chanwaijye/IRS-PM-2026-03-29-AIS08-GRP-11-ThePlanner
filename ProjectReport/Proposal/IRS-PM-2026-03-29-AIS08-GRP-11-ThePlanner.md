@@ -11,6 +11,7 @@
 | Cohort | AIS08 |
 | Team Leader | Chan Wai Jye |
 | Student ID | A0340644J |
+| GitHub Repository | https://github.com/chanwaijye/IRS-PM-2026-03-29-AIS08-GRP-11-ThePlanner |
 | Submission Type | Solo Submission — AI-Assisted Development |
 
 ---
@@ -342,7 +343,7 @@ flowchart TD
 
 ### 11.1 Final Deliverables (due 3 May 2026)
 
-- GitHub repository (from IRS-PM template) — code, README, installation guide.
+- GitHub repository — https://github.com/chanwaijye/IRS-PM-2026-03-29-AIS08-GRP-11-ThePlanner — code, README, installation guide.
 - Promo video (5 min) — business pain, live use-case demo in Isaac Sim, pricing/value proposition.
 - Technical video (5 min) — system architecture walkthrough, C++ planner code explanation, agent pipeline demo.
 - Group project report (PDF) — market research, system design, implementation, findings & discussion. Appendices: this proposal, technique-to-course map, installation & user guide.
