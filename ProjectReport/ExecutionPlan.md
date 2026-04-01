@@ -7,8 +7,7 @@
 
 The proposal was submitted on Mar 29, 2026 (Week 3 deadline). SystemCode directories are all placeholders — no implementation code exists yet. Week 4 officially begins Apr 5. This plan covers two parallel tracks:
 
-1. **Track A — Dev Environment Setup**: System configuration, toolchain, remote access, and AI CLI tools.  
-   **Authentication strategy:** Chrome is set up first with the Google account + sync, then all Google-ecosystem services (Gemini CLI, gcloud, Google Cloud APIs) authenticate via Google IAM / Application Default Credentials (ADC) using that same signed-in identity — no per-service API key management needed.
+1. **Track A — Dev Environment Setup**: System configuration, toolchain, remote access, and AI CLI tools.
 2. **Track B — Project Catchup**: Technical milestones from Weeks 1–3 deferred during proposal writing (PDDL domain, C++ skeleton, Ollama/LLaMA-3, NetworkX KG, FastAPI hub).
 
 **Corrections vs. Proposal:**
@@ -110,7 +109,23 @@ cat ~/.ssh/github.pub   # Paste into: GitHub → Settings → SSH Keys
 
 ---
 
-### A6. GitHub CLI (gh)
+### A6. Google Chrome + Account Sync
+
+```bash
+wget -q -O /tmp/chrome.deb \
+  https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+sudo dpkg -i /tmp/chrome.deb
+sudo apt --fix-broken install -y
+```
+
+**Post-install: sign in and sync**
+1. Launch Chrome
+2. Settings → "Sign in to Chrome" → sign in with your personal Google account
+3. Enable Sync: everything (passwords, extensions, history, bookmarks)
+
+---
+
+### A7. GitHub CLI (gh)
 
 ```bash
 (type -p wget >/dev/null || sudo apt install wget -y) \
@@ -129,58 +144,7 @@ gh auth status
 
 ---
 
-### A7. Google Chrome + Account Sync  ← IAM Anchor
-
-**This step establishes the Google identity used by all subsequent Google services.**
-
-```bash
-wget -q -O /tmp/chrome.deb \
-  https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
-sudo dpkg -i /tmp/chrome.deb
-sudo apt --fix-broken install -y
-```
-
-**Post-install: sign in and sync**
-1. Launch Chrome
-2. Settings → "Sign in to Chrome" → sign in with your Google account
-3. Enable Sync: everything (passwords, extensions, history, bookmarks)
-4. This account becomes the Google IAM identity for all tools below
-
----
-
-### A8. Google Cloud CLI (gcloud) — IAM Foundation
-
-**All Google services (Gemini, Vertex AI, Cloud APIs) will use these Application Default Credentials (ADC).**
-
-```bash
-# Install gcloud CLI
-curl https://sdk.cloud.google.com | bash
-exec -l $SHELL          # reload shell to pick up gcloud in PATH
-gcloud init             # select/create project, set region
-
-# Authenticate as the same Google account used in Chrome
-gcloud auth login       # opens browser → use same Google account → grant access
-
-# Set Application Default Credentials (ADC) — used by all Google SDKs
-gcloud auth application-default login
-# This writes credentials to: ~/.config/gcloud/application_default_credentials.json
-
-# Verify
-gcloud auth list        # should show active account
-gcloud config list      # project, region confirmed
-```
-
-Add to `~/.zshrc`:
-```bash
-# gcloud
-source "$(gcloud info --format='value(installation.sdk_root)')/path.zsh.inc"
-source "$(gcloud info --format='value(installation.sdk_root)')/completion.zsh.inc"
-export GOOGLE_CLOUD_PROJECT="<your-project-id>"
-```
-
----
-
-### A9. Gemini CLI — via Google IAM
+### A8. Gemini CLI
 
 ```bash
 # Node.js 22 (required for Gemini CLI)
@@ -190,18 +154,15 @@ sudo apt install -y nodejs
 # Install Gemini CLI
 npm install -g @google/gemini-cli
 
-# Authenticate via Google OAuth (same account as Chrome/gcloud — NO API key needed)
-gemini auth login       # opens browser → sign in with same Google account
+# Authenticate via personal Google account (browser OAuth)
+gemini auth login       # opens browser → sign in with personal Google account
 
-# Verify: ADC is used automatically once gcloud auth application-default login is done
 gemini --version
 ```
 
-**How it works:** Gemini CLI uses Google OAuth / ADC. Since `gcloud auth application-default login` was already run in A8, Gemini CLI picks up those credentials automatically. No `GEMINI_API_KEY` env var required.
-
 ---
 
-### A10. Claude Code CLI
+### A9. Claude Code CLI
 
 ```bash
 # Install (Node.js already installed in A9)
@@ -226,8 +187,6 @@ echo 'export OPENAI_API_KEY="sk-..."' >> ~/.zshrc
 
 codex --version
 ```
-
-*(OpenAI is not part of Google IAM — OpenAI API key is required separately.)*
 
 ---
 
@@ -427,14 +386,8 @@ Mock I/O mode per endpoint for independent agent testing.
 ## Authentication Architecture Summary
 
 ```
-Google Account (Chrome sync)
-    │
-    ├── gcloud auth login               → gcloud CLI
-    └── gcloud auth application-default login
-            │
-            ├── Gemini CLI              → uses ADC automatically
-            ├── google-cloud Python SDK → uses ADC automatically
-            └── Vertex AI APIs          → uses ADC automatically
+Personal Google account (Chrome sync)
+    └── gemini auth login               → Gemini CLI (browser OAuth)
 
 GitHub account (SSH key)
     └── gh auth login                   → gh CLI
@@ -455,10 +408,6 @@ OpenAI API key
 lsb_release -a                         # Ubuntu 24.04
 nvidia-smi                             # driver ≥535
 nvcc --version                         # CUDA 12.x
-
-# Google IAM
-gcloud auth list                       # active account shown
-gcloud auth application-default print-access-token   # prints a token
 
 # Tools
 gh --version
@@ -494,7 +443,7 @@ cd SystemCode/ros2_bridge && curl http://localhost:8000/goal \
 |---|---|
 | ROS2 Humble → Jazzy | Ubuntu 24.04 requires ROS2 Jazzy; verify message type compatibility |
 | Isaac Sim 4.x → 5.1 | Audit `omni.isaac.*` API changes before writing Agent 4 code |
-| Gemini API key removed | Google ADC (A8) handles auth — `gemini auth login` uses same account |
+| Gemini auth | `gemini auth login` uses personal Google account browser OAuth |
 | GRUB savedefault | Requires `GRUB_DEFAULT=saved` + `GRUB_SAVEDEFAULT=true` + `update-grub` |
 
 ---
