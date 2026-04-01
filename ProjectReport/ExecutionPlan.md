@@ -226,14 +226,23 @@ sudo dpkg -i nomachine_*.deb
 sudo ubuntu-drivers autoinstall
 # or: sudo apt install -y nvidia-driver-570
 
-# CUDA Toolkit 12.6
+# CUDA Toolkit (latest — 13.2 as of 2026-04-01)
 wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb
 sudo dpkg -i cuda-keyring_1.1-1_all.deb
-sudo apt update && sudo apt install -y cuda-toolkit-12-6
+sudo apt update && sudo apt install -y cuda-toolkit
+
+# Add to ~/.zshrc
+export PATH=/usr/local/cuda/bin:$PATH
+export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
+
+# If Isaac Sim requires CUDA 12.x specifically, pin instead:
+# sudo apt install -y cuda-toolkit-12-6
+# export PATH=/usr/local/cuda-12.6/bin:$PATH
+# export LD_LIBRARY_PATH=/usr/local/cuda-12.6/lib64:$LD_LIBRARY_PATH
 
 # Verify
 nvidia-smi                  # driver ≥535
-nvcc --version              # CUDA 12.x
+nvcc --version              # CUDA version
 ```
 
 **Install Isaac Sim 5.1 via Omniverse Launcher:**
@@ -407,7 +416,7 @@ OpenAI API key
 # System
 lsb_release -a                         # Ubuntu 24.04
 nvidia-smi                             # driver ≥535
-nvcc --version                         # CUDA 12.x
+nvcc --version                         # CUDA 13.x (or 12.6 if pinned)
 
 # Tools
 gh --version
