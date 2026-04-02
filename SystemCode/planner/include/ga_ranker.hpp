@@ -26,7 +26,8 @@ public:
         FitnessWeights weights{};
     };
 
-    explicit GaRanker(Config cfg = {}) : cfg_(cfg) {}
+    GaRanker() : cfg_(Config{}) {}
+    explicit GaRanker(Config cfg) : cfg_(cfg) {}
 
     // Rank a set of candidate plans; return the best-fitness plan.
     // If only one plan is given, returns it unchanged.

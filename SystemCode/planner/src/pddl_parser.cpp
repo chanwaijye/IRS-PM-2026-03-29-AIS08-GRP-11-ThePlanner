@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cctype>
 #include <fstream>
+#include <functional>
 #include <sstream>
 #include <stdexcept>
 
@@ -63,28 +64,291 @@ const std::string& PredicateIndex::name(PredicateId id) const {
     return id_to_name_.at(id);
 }
 
-// ── Domain parsing (stub — full recursive-descent parser to be added) ──────
+// ── Token cursor ───────────────────────────────────────────────────────────
+
+class Cursor {
+public:
+    explicit Cursor(const std::vector<std::string>& tokens) : tokens_(tokens) {}
+
+    bool at_end() const { return pos_ >= tokens_.size(); }
+
+    const std::string& peek() const {
+        static const std::string empty;
+        return at_end() ? empty : tokens_[pos_];
+    }
+
+    std::string consume() {
+        if (at_end()) throw std::runtime_error("Unexpected end of PDDL token stream");
+        return tokens_[pos_++];
+    }
+
+    void expect(const std::string& s) {
+        std::string t = consume();
+        if (t != s)
+            throw std::runtime_error("Expected '" + s + "' but got '" + t + "'");
+    }
+
+private:
+    const std::vector<std::string>& tokens_;
+    std::size_t pos_{0};
+};
+
+// ── Parser helpers ─────────────────────────────────────────────────────────
+
+// Format a ground/parametric predicate as "name(arg1,arg2,...)" or "name" if
+// there are no arguments. This is the canonical string fed to PredicateIndex.
+static std::string format_pred(const std::string& name,
+                                const std::vector<std::string>& args) {
+    if (args.empty()) return name;
+    std::string s = name + "(";
+    for (std::size_t i = 0; i < args.size(); ++i) {
+        if (i) s += ',';
+        s += args[i];
+    }
+    s += ')';
+    return s;
+}
+
+// Parse a typed name list: name1 name2 - type  name3 - type2 ...
+// Appends (name, type) pairs to out_names / out_types.
+static void parse_typed_list(Cursor& cur,
+                              std::vector<std::string>& out_names,
+                              std::vector<std::string>& out_types,
+                              const std::string& default_type = "object") {
+    std::vector<std::string> pending;
+    while (cur.peek() != ")") {
+        std::string tok = cur.consume();
+        if (tok == "-") {
+            std::string type = cur.consume();
+            for (auto& n : pending) {
+                out_names.push_back(n);
+                out_types.push_back(type);
+            }
+            pending.clear();
+        } else {
+            pending.push_back(tok);
+        }
+    }
+    // Names with no explicit type marker
+    for (auto& n : pending) {
+        out_names.push_back(n);
+        out_types.push_back(default_type);
+    }
+}
+
+// Recursively parse a PDDL condition/effect s-expression.
+// Positive atoms go into pos, negated atoms into neg.
+static void parse_condition(Cursor& cur,
+                             std::vector<std::string>& pos,
+                             std::vector<std::string>& neg) {
+    cur.expect("(");
+    if (cur.peek() == ")") { cur.consume(); return; } // empty ()
+
+    const std::string head = cur.peek();
+
+    if (head == "and") {
+        cur.consume();
+        while (cur.peek() != ")")
+            parse_condition(cur, pos, neg);
+
+    } else if (head == "not") {
+        cur.consume();
+        cur.expect("(");
+        std::string pred = cur.consume();
+        std::vector<std::string> args;
+        while (cur.peek() != ")") args.push_back(cur.consume());
+        cur.expect(")");
+        neg.push_back(format_pred(pred, args));
+
+    } else {
+        // Positive atom: (predicate arg1 arg2 ...)
+        std::string pred = cur.consume();
+        std::vector<std::string> args;
+        while (cur.peek() != ")") args.push_back(cur.consume());
+        pos.push_back(format_pred(pred, args));
+    }
+
+    cur.expect(")");
+}
+
+// Parse a goal expression, collecting only the positive ground atoms.
+static void parse_goal(Cursor& cur, std::vector<std::string>& goal_facts) {
+    cur.expect("(");
+    if (cur.peek() == ")") { cur.consume(); return; }
+
+    const std::string head = cur.peek();
+
+    if (head == "and") {
+        cur.consume();
+        while (cur.peek() != ")")
+            parse_goal(cur, goal_facts);
+
+    } else {
+        std::string pred = cur.consume();
+        std::vector<std::string> args;
+        while (cur.peek() != ")") args.push_back(cur.consume());
+        goal_facts.push_back(format_pred(pred, args));
+    }
+
+    cur.expect(")");
+}
+
+// Skip a balanced sub-expression when pos_ is just AFTER the opening '('.
+// Returns after consuming the matching ')'.
+static void skip_section(Cursor& cur) {
+    int depth = 1;
+    while (depth > 0) {
+        std::string t = cur.consume();
+        if (t == "(") ++depth;
+        else if (t == ")") --depth;
+    }
+}
+
+// ── Domain parsing ─────────────────────────────────────────────────────────
 
 ParsedDomain PddlParser::parse_domain(const std::string& path) {
     std::ifstream f(path);
     if (!f) throw std::runtime_error("Cannot open domain file: " + path);
     std::string src((std::istreambuf_iterator<char>(f)),
                      std::istreambuf_iterator<char>());
-    // TODO: implement full recursive-descent PDDL 2.1 parser
-    // For now, return a named stub so the planner pipeline compiles and runs
+
+    auto tokens = tokenise(src);
+    Cursor cur(tokens);
+
+    // (define (domain <name>) ...)
+    cur.expect("(");
+    cur.expect("define");
+    cur.expect("(");
+    cur.expect("domain");
     ParsedDomain d;
-    d.name = "tabletop";
+    d.name = cur.consume();
+    cur.expect(")");
+
+    // Domain sections
+    while (!cur.at_end() && cur.peek() != ")") {
+        cur.expect("(");
+        std::string section = cur.consume();
+
+        if (section == ":requirements") {
+            // Skip all requirement keywords
+            while (cur.peek() != ")") cur.consume();
+
+        } else if (section == ":types") {
+            // Typed list: name1 name2 - parent  name3 - parent2 ...
+            std::vector<std::string> names, types;
+            parse_typed_list(cur, names, types, "");
+            for (std::size_t i = 0; i < names.size(); ++i)
+                d.types[types[i]].push_back(names[i]);
+
+        } else if (section == ":predicates") {
+            // Each predicate: (name ?p1 - type ...)
+            while (cur.peek() != ")") {
+                cur.expect("(");
+                d.predicates_raw.push_back(cur.consume());
+                while (cur.peek() != ")") cur.consume(); // skip typed params
+                cur.expect(")");
+            }
+
+        } else if (section == ":action") {
+            ActionSchema schema;
+            schema.name = cur.consume();
+
+            while (cur.peek() != ")") {
+                std::string kw = cur.consume();
+
+                if (kw == ":parameters") {
+                    cur.expect("(");
+                    parse_typed_list(cur, schema.param_names, schema.param_types);
+                    cur.expect(")");
+
+                } else if (kw == ":precondition") {
+                    parse_condition(cur, schema.pos_pre_raw, schema.neg_pre_raw);
+
+                } else if (kw == ":effect") {
+                    parse_condition(cur, schema.add_eff_raw, schema.del_eff_raw);
+
+                } else {
+                    // Unknown keyword — skip its value (one balanced s-expr)
+                    if (cur.peek() == "(") {
+                        cur.consume(); // consume opening (
+                        skip_section(cur);
+                    } else {
+                        cur.consume();
+                    }
+                }
+            }
+            d.actions.push_back(schema);
+
+        } else {
+            // Unknown section — skip balanced content then fall through to expect(")")
+            skip_section(cur);
+            continue; // skip_section already consumed the closing )
+        }
+
+        cur.expect(")");
+    }
+    cur.expect(")"); // closes (define ...)
     return d;
 }
+
+// ── Problem parsing ────────────────────────────────────────────────────────
 
 ParsedProblem PddlParser::parse_problem(const std::string& path) {
     std::ifstream f(path);
     if (!f) throw std::runtime_error("Cannot open problem file: " + path);
     std::string src((std::istreambuf_iterator<char>(f)),
                      std::istreambuf_iterator<char>());
+
+    auto tokens = tokenise(src);
+    Cursor cur(tokens);
+
+    // (define (problem <name>) ...)
+    cur.expect("(");
+    cur.expect("define");
+    cur.expect("(");
+    cur.expect("problem");
     ParsedProblem p;
-    p.name = "tabletop-task";
-    p.domain_name = "tabletop";
+    p.name = cur.consume();
+    cur.expect(")");
+
+    // Problem sections
+    while (!cur.at_end() && cur.peek() != ")") {
+        cur.expect("(");
+        std::string section = cur.consume();
+
+        if (section == ":domain") {
+            p.domain_name = cur.consume();
+
+        } else if (section == ":objects") {
+            // Typed object list: name1 name2 - type ...
+            std::vector<std::string> names, types;
+            parse_typed_list(cur, names, types);
+            for (std::size_t i = 0; i < names.size(); ++i)
+                p.objects[types[i]].push_back(names[i]);
+
+        } else if (section == ":init") {
+            // Flat list of ground atoms: (pred arg1 arg2 ...)
+            while (cur.peek() != ")") {
+                cur.expect("(");
+                std::string pred = cur.consume();
+                std::vector<std::string> args;
+                while (cur.peek() != ")") args.push_back(cur.consume());
+                cur.expect(")");
+                p.init_facts.push_back(format_pred(pred, args));
+            }
+
+        } else if (section == ":goal") {
+            parse_goal(cur, p.goal_facts);
+
+        } else {
+            // Unknown section
+            skip_section(cur);
+            continue;
+        }
+
+        cur.expect(")");
+    }
+    cur.expect(")"); // closes (define ...)
     return p;
 }
 

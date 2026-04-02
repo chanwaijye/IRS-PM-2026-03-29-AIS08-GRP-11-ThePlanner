@@ -19,7 +19,8 @@ public:
         bool verbose{false};
     };
 
-    explicit AStarPlanner(Config cfg = {}) : cfg_(cfg) {}
+    AStarPlanner() : cfg_(Config{}) {}
+    explicit AStarPlanner(Config cfg) : cfg_(cfg) {}
 
     std::optional<Plan> search(const State& init,
                                const State& goal,

@@ -25,7 +25,6 @@
     :parameters (?robot - robot ?from - location ?to - location)
     :precondition (and
       (at ?robot ?from)
-      (hand_empty ?robot)
     )
     :effect (and
       (not (at ?robot ?from))
