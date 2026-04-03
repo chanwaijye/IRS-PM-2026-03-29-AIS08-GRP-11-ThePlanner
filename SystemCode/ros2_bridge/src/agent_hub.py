@@ -32,7 +32,7 @@ from pydantic import BaseModel
 
 # Local agent modules (adjust sys.path if running standalone)
 import sys
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "llm_agent", "src"))
 from nl_to_pddl import nl_to_pddl_problem
 from knowledge_graph import SceneKnowledgeGraph, build_default_scene
 

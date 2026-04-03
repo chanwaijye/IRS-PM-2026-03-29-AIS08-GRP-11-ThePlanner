@@ -41,18 +41,35 @@ sudo -k && sudo whoami                # Must print 'root' without password promp
 
 ---
 
-### A3. GRUB — Remember Last Boot Selection
+### A3. GRUB — Remember Last Boot + Font + Performance
 
 Edit `/etc/default/grub`:
 ```
 GRUB_DEFAULT=saved
 GRUB_SAVEDEFAULT=true
 GRUB_TIMEOUT=5
+GRUB_CMDLINE_LINUX_DEFAULT="quiet splash loglevel=3"
+
+# Larger font for HiDPI displays (32pt DejaVu Sans Mono)
+GRUB_FONT=/boot/grub/fonts/unicode32.pf2
+
+# Keep graphical mode through boot (avoids mode-switch flicker)
+GRUB_GFXMODE=auto
+GRUB_GFXPAYLOAD_LINUX=keep
 ```
+
+Generate the font and apply:
 ```bash
+sudo grub-mkfont -s 32 -o /boot/grub/fonts/unicode32.pf2 \
+  /usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf
 sudo update-grub
 ```
-Persists last selected kernel/OS — useful when dual-booting or pinning a kernel for Isaac Sim.
+
+- `GRUB_FONT` — renders GRUB menu text at 32pt (readable on 4K/HiDPI); adjust `-s` for different sizes
+- `GRUB_GFXMODE=auto` — selects best resolution supported by GPU
+- `GRUB_GFXPAYLOAD_LINUX=keep` — holds graphical mode into kernel, eliminates console flicker on boot
+- `loglevel=3` — suppresses noisy kernel messages during splash screen
+- `GRUB_DEFAULT=saved` + `GRUB_SAVEDEFAULT=true` — persists last selected kernel/OS (useful when dual-booting or pinning kernel for Isaac Sim)
 
 ---
 
@@ -173,6 +190,34 @@ claude --version
 # Authenticate via Anthropic API key
 export ANTHROPIC_API_KEY="sk-ant-..."
 echo 'export ANTHROPIC_API_KEY="sk-ant-..."' >> ~/.zshrc
+```
+
+---
+
+### A10. VS Code
+
+```bash
+# Install via official Microsoft .deb
+wget -qO /tmp/vscode.deb "https://code.visualstudio.com/sha/download?build=stable&os=linux-deb-x64"
+sudo dpkg -i /tmp/vscode.deb
+sudo apt --fix-broken install -y
+
+code --version
+```
+
+**Recommended extensions:**
+```bash
+code --install-extension ms-vscode-remote.remote-ssh
+code --install-extension ms-vscode.cpptools
+code --install-extension ms-python.python
+code --install-extension twxs.cmake
+code --install-extension ms-vscode.cmake-tools
+code --install-extension zachflower.uncrustify
+```
+
+**Set as default git editor** (already set in A5):
+```bash
+git config --global core.editor "code --wait"
 ```
 
 ---
@@ -420,6 +465,7 @@ nvcc --version                         # CUDA 13.x (or 12.6 if pinned)
 
 # Tools
 gh --version
+code --version
 claude --version
 gemini --version
 codex --version
@@ -429,7 +475,7 @@ ollama list | grep llama3
 ~/.local/share/ov/pkg/isaac-sim-5.1.0/python.sh -c "import omni; print(omni.__version__)"
 
 # ROS2
-source /opt/ros/jazzy/setup.zsh && ros2 --version
+source /opt/ros/jazzy/setup.zsh && apt show ros-jazzy-desktop 2>/dev/null | grep Version
 
 # Remote access
 tailscale status
@@ -454,6 +500,7 @@ cd SystemCode/ros2_bridge && curl http://localhost:8000/goal \
 | Isaac Sim 4.x → 5.1 | Audit `omni.isaac.*` API changes before writing Agent 4 code |
 | Gemini auth | `gemini auth login` uses personal Google account browser OAuth |
 | GRUB savedefault | Requires `GRUB_DEFAULT=saved` + `GRUB_SAVEDEFAULT=true` + `update-grub` |
+| GRUB font/performance | 32pt font via `grub-mkfont`; `GRUB_GFXMODE=auto` + `GRUB_GFXPAYLOAD_LINUX=keep` + `loglevel=3` |
 
 ---
 
@@ -462,7 +509,8 @@ cd SystemCode/ros2_bridge && curl http://localhost:8000/goal \
 | Path | Action |
 |---|---|
 | `/etc/sudoers.d/$USER` | Create — NOPASSWD |
-| `/etc/default/grub` | Edit — GRUB_DEFAULT=saved |
+| `/etc/default/grub` | Edit — savedefault + 32pt font + gfxmode + loglevel=3 |
+| `/boot/grub/fonts/unicode32.pf2` | Create — 32pt DejaVu Sans Mono via grub-mkfont |
 | `~/.zshrc` | Create — omp + PATH + source ROS2 + aliases |
 | `~/.config/ohmyposh/clean.toml` | Create — omp theme |
 | `~/.gitconfig` | Create — identity + prefs |
