@@ -46,3 +46,11 @@ foreach(test_name test_parser test_astar test_ga)
   target_link_libraries(${test_name} PRIVATE planner_lib GTest::gtest_main)
   add_test(NAME ${test_name} COMMAND ${test_name})
 endforeach()
+
+# IPC benchmark integration tests — domain/problem files resolved at compile time
+add_executable(test_benchmarks tests/test_benchmarks.cpp)
+target_link_libraries(test_benchmarks PRIVATE planner_lib GTest::gtest_main)
+target_compile_definitions(test_benchmarks PRIVATE
+    BENCHMARK_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/benchmarks"
+)
+add_test(NAME test_benchmarks COMMAND test_benchmarks)
