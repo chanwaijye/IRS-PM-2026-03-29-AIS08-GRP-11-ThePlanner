@@ -31,6 +31,7 @@ from enum import Enum
 from typing import Any
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 # Local agent modules (adjust sys.path if running standalone)
@@ -55,6 +56,13 @@ MOCK_ISAAC   = os.environ.get("MOCK_ISAAC",   "1") == "1"
 # ── App ───────────────────────────────────────────────────────────────────
 
 app = FastAPI(title="ThePlanner Agent Hub", version="0.1.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # ── In-memory state store ─────────────────────────────────────────────────
 

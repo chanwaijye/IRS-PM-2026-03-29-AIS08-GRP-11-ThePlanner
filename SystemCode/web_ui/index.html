@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ThePlanner — Control Panel</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0f1117;
+      --surface:   #1a1d27;
+      --border:    #2a2d3e;
+      --accent:    #5b8dee;
+      --accent-h:  #7aa4f5;
+      --success:   #4caf82;
+      --failure:   #e05c5c;
+      --running:   #e0a84a;
+      --pending:   #8888aa;
+      --text:      #d4d8f0;
+      --muted:     #666a88;
+      --radius:    8px;
+      --mono:      "JetBrains Mono", "Fira Code", monospace;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 14px;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ── */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    header h1 { font-size: 18px; font-weight: 600; letter-spacing: .5px; }
+    header h1 span { color: var(--accent); }
+    #hub-status {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    #hub-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--muted);
+      transition: background .3s;
+    }
+    #hub-dot.online  { background: var(--success); }
+    #hub-dot.offline { background: var(--failure); }
+
+    /* ── Layout ── */
+    main {
+      display: grid;
+      grid-template-columns: 380px 1fr;
+      gap: 0;
+      flex: 1;
+    }
+
+    /* ── Sidebar ── */
+    aside {
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+      overflow-y: auto;
+    }
+
+    section h2 {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 12px;
+    }
+
+    /* Goal form */
+    textarea {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      font-size: 14px;
+      padding: 10px 12px;
+      resize: vertical;
+      min-height: 80px;
+      line-height: 1.5;
+      transition: border-color .2s;
+    }
+    textarea:focus { outline: none; border-color: var(--accent); }
+
+    details { margin-top: 10px; }
+    summary {
+      cursor: pointer;
+      font-size: 12px;
+      color: var(--muted);
+      user-select: none;
+      margin-bottom: 8px;
+    }
+    summary:hover { color: var(--text); }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 9px 18px;
+      border: none;
+      border-radius: var(--radius);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .15s, opacity .15s;
+    }
+    .btn:disabled { opacity: .45; cursor: not-allowed; }
+    .btn-primary  { background: var(--accent); color: #fff; width: 100%; margin-top: 12px; }
+    .btn-primary:hover:not(:disabled)  { background: var(--accent-h); }
+    .btn-sm       { padding: 6px 12px; font-size: 12px; }
+    .btn-success  { background: var(--success); color: #fff; }
+    .btn-danger   { background: var(--failure);  color: #fff; }
+    .btn-neutral  { background: var(--border);   color: var(--text); }
+
+    /* Plan list */
+    #plan-list { display: flex; flex-direction: column; gap: 8px; }
+
+    .plan-card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px;
+      cursor: pointer;
+      transition: border-color .2s;
+    }
+    .plan-card:hover  { border-color: var(--accent); }
+    .plan-card.active { border-color: var(--accent); background: #1e2235; }
+
+    .plan-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+    .plan-card-goal {
+      font-size: 13px;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 220px;
+    }
+    .badge {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .6px;
+      text-transform: uppercase;
+      padding: 2px 7px;
+      border-radius: 20px;
+      flex-shrink: 0;
+    }
+    .badge-pending  { background: #2a2d3e; color: var(--pending);  }
+    .badge-running  { background: #332a1a; color: var(--running);  }
+    .badge-success  { background: #1a2e28; color: var(--success);  }
+    .badge-failure  { background: #2e1a1a; color: var(--failure);  }
+
+    .plan-card-meta {
+      font-size: 11px;
+      color: var(--muted);
+      font-family: var(--mono);
+    }
+
+    /* ── Main panel ── */
+    #detail {
+      padding: 24px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    #empty-state {
+      margin: auto;
+      text-align: center;
+      color: var(--muted);
+    }
+    #empty-state svg { opacity: .3; margin-bottom: 16px; }
+    #empty-state p   { font-size: 13px; }
+
+    /* Detail header */
+    #detail-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    #detail-goal {
+      font-size: 18px;
+      font-weight: 600;
+      line-height: 1.4;
+    }
+    #detail-actions { display: flex; gap: 8px; flex-shrink: 0; }
+
+    /* Meta row */
+    #detail-meta {
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+    .meta-item { display: flex; flex-direction: column; gap: 2px; }
+    .meta-label { font-size: 10px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); }
+    .meta-value { font-size: 13px; font-family: var(--mono); }
+
+    /* Progress bar */
+    #progress-wrap {
+      background: var(--border);
+      border-radius: 4px;
+      height: 4px;
+      overflow: hidden;
+    }
+    #progress-bar {
+      height: 100%;
+      background: var(--accent);
+      width: 0%;
+      transition: width .4s ease;
+    }
+    #progress-bar.success { background: var(--success); }
+    #progress-bar.failure { background: var(--failure); }
+
+    /* Action steps */
+    #steps-wrap h2 { margin-bottom: 12px; }
+    #steps-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .step-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 10px 14px;
+      font-family: var(--mono);
+      font-size: 13px;
+      transition: border-color .2s;
+    }
+    .step-row.done    { border-color: var(--success); }
+    .step-row.failed  { border-color: var(--failure); }
+    .step-row.active  { border-color: var(--running); animation: pulse 1.2s infinite; }
+    @keyframes pulse  { 0%,100% { opacity:1 } 50% { opacity:.6 } }
+
+    .step-num {
+      width: 24px; height: 24px;
+      border-radius: 50%;
+      background: var(--border);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+    .step-row.done   .step-num { background: var(--success); color: #fff; }
+    .step-row.failed .step-num { background: var(--failure);  color: #fff; }
+    .step-row.active .step-num { background: var(--running);  color: #fff; }
+
+    .step-name { flex: 1; }
+    .step-cost { color: var(--muted); font-size: 11px; }
+
+    /* Log panel */
+    #log-wrap h2 { margin-bottom: 8px; }
+    #log {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px;
+      font-family: var(--mono);
+      font-size: 12px;
+      line-height: 1.7;
+      max-height: 180px;
+      overflow-y: auto;
+      color: var(--muted);
+    }
+    .log-info    { color: var(--text); }
+    .log-success { color: var(--success); }
+    .log-error   { color: var(--failure); }
+    .log-warn    { color: var(--running); }
+
+    /* Toast */
+    #toast {
+      position: fixed;
+      bottom: 24px; right: 24px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px 18px;
+      font-size: 13px;
+      box-shadow: 0 4px 24px #00000055;
+      opacity: 0;
+      transform: translateY(8px);
+      transition: opacity .25s, transform .25s;
+      pointer-events: none;
+      z-index: 999;
+      max-width: 340px;
+    }
+    #toast.show { opacity: 1; transform: translateY(0); }
+    #toast.toast-error { border-color: var(--failure); color: var(--failure); }
+  </style>
+</head>
+<body>
+
+<!-- ── Header ── -->
+<header>
+  <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+    <rect width="28" height="28" rx="6" fill="#5b8dee22"/>
+    <path d="M7 14h14M14 7l7 7-7 7" stroke="#5b8dee" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+  <h1>The<span>Planner</span></h1>
+  <div id="hub-status">
+    <div id="hub-dot"></div>
+    <span id="hub-label">Connecting…</span>
+  </div>
+</header>
+
+<!-- ── Layout ── -->
+<main>
+
+  <!-- Sidebar -->
+  <aside>
+
+    <!-- Goal form -->
+    <section>
+      <h2>New Goal</h2>
+      <textarea id="goal-input" placeholder="e.g. Move the red cube to zone C"></textarea>
+
+      <details>
+        <summary>Scene context (optional JSON)</summary>
+        <textarea id="scene-input" style="min-height:120px; margin-top:8px; font-family:var(--mono); font-size:12px;"
+          placeholder='{"robot":"franka","objects":[{"name":"red_cube","at":"zone_a"}],"locations":["zone_a","zone_b","zone_c"]}'></textarea>
+      </details>
+
+      <button class="btn btn-primary" id="submit-btn" onclick="submitGoal()">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M8 1v14M1 8l7-7 7 7"/>
+        </svg>
+        Plan &amp; Execute
+      </button>
+    </section>
+
+    <!-- Plan list -->
+    <section style="flex:1; overflow:hidden; display:flex; flex-direction:column;">
+      <h2>Plans
+        <span id="plan-count" style="color:var(--accent); margin-left:6px;">0</span>
+      </h2>
+      <div id="plan-list" style="overflow-y:auto; flex:1;"></div>
+    </section>
+
+  </aside>
+
+  <!-- Detail panel -->
+  <div id="detail">
+    <div id="empty-state">
+      <svg width="64" height="64" viewBox="0 0 64 64" fill="none">
+        <rect x="12" y="12" width="40" height="40" rx="6" stroke="#5b8dee" stroke-width="2"/>
+        <path d="M22 32h20M22 24h12M22 40h8" stroke="#5b8dee" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+      <p>Submit a goal to generate and execute a plan.</p>
+    </div>
+  </div>
+
+</main>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<script>
+// ── Config ────────────────────────────────────────────────────────────────────
+const HUB = (window.HUB_URL || "http://localhost:8000").replace(/\/$/, "");
+const POLL_INTERVAL = 1500;   // ms — poll active plan status
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let plans       = {};          // plan_id → {id, goal, status, steps, cost, actions}
+let activePoll  = null;        // setInterval handle
+let selectedId  = null;
+
+// ── Hub health ────────────────────────────────────────────────────────────────
+async function checkHealth() {
+  try {
+    const r = await fetch(`${HUB}/docs`, { method: "HEAD", signal: AbortSignal.timeout(3000) });
+    setHubStatus(r.ok || r.status === 200 || r.status === 405);
+  } catch { setHubStatus(false); }
+}
+function setHubStatus(online) {
+  document.getElementById("hub-dot").className   = online ? "online" : "offline";
+  document.getElementById("hub-label").textContent = online ? "Hub online" : "Hub offline";
+}
+checkHealth();
+setInterval(checkHealth, 8000);
+
+// ── Submit goal ───────────────────────────────────────────────────────────────
+async function submitGoal() {
+  const goal = document.getElementById("goal-input").value.trim();
+  if (!goal) { showToast("Enter a goal first.", true); return; }
+
+  let sceneCtx = null;
+  const raw = document.getElementById("scene-input").value.trim();
+  if (raw) {
+    try { sceneCtx = JSON.parse(raw); }
+    catch { showToast("Scene JSON is invalid.", true); return; }
+  }
+
+  const btn = document.getElementById("submit-btn");
+  btn.disabled = true;
+  btn.textContent = "Planning…";
+
+  try {
+    // 1. POST /goal
+    const body = { goal };
+    if (sceneCtx) body.scene_context = sceneCtx;
+
+    const gr = await api("POST", "/goal", body);
+    const planId = gr.plan_id;
+
+    log(`Plan ${planId.slice(0,8)}… created — ${gr.steps} steps, cost ${gr.cost.toFixed(1)}`, "info");
+
+    // 2. Fetch full action list
+    const pr = await api("GET", `/plan/${planId}`);
+    plans[planId] = {
+      id:      planId,
+      goal:    pr.goal,
+      status:  pr.status,
+      steps:   gr.steps,
+      cost:    gr.cost,
+      actions: pr.actions,
+    };
+
+    renderPlanList();
+    selectPlan(planId);
+
+    // 3. POST /execute/{id}
+    await api("POST", `/execute/${planId}`);
+    log(`Execution started for ${planId.slice(0,8)}…`, "info");
+
+    startPolling(planId);
+
+  } catch (e) {
+    showToast(e.message, true);
+    log(e.message, "error");
+  } finally {
+    btn.disabled    = false;
+    btn.textContent = "Plan & Execute";
+  }
+}
+
+// ── Polling ───────────────────────────────────────────────────────────────────
+function startPolling(planId) {
+  if (activePoll) clearInterval(activePoll);
+  activePoll = setInterval(() => pollStatus(planId), POLL_INTERVAL);
+}
+
+async function pollStatus(planId) {
+  try {
+    const s = await api("GET", `/status/${planId}`);
+    const prev = plans[planId]?.status;
+    plans[planId].status = s.status;
+
+    if (s.status !== prev) {
+      renderPlanList();
+      if (selectedId === planId) renderDetail(planId);
+
+      if (s.status === "success") {
+        log(`Plan ${planId.slice(0,8)}… succeeded.`, "success");
+        clearInterval(activePoll);
+        activePoll = null;
+      } else if (s.status === "failure") {
+        log(`Plan ${planId.slice(0,8)}… failed.`, "error");
+        clearInterval(activePoll);
+        activePoll = null;
+      }
+    }
+  } catch { /* hub might be temporarily busy */ }
+}
+
+// ── Replan ────────────────────────────────────────────────────────────────────
+async function replan(planId) {
+  try {
+    const gr = await api("POST", "/replan", { plan_id: planId });
+    const newId = gr.plan_id;
+    const pr    = await api("GET", `/plan/${newId}`);
+    plans[newId] = {
+      id: newId, goal: pr.goal, status: pr.status,
+      steps: gr.steps, cost: gr.cost, actions: pr.actions,
+    };
+    await api("POST", `/execute/${newId}`);
+    log(`Replanned → ${newId.slice(0,8)}…`, "warn");
+    renderPlanList();
+    selectPlan(newId);
+    startPolling(newId);
+  } catch (e) { showToast(e.message, true); }
+}
+
+// ── Render plan list ──────────────────────────────────────────────────────────
+function renderPlanList() {
+  const list = document.getElementById("plan-list");
+  const ids  = Object.keys(plans).reverse();
+  document.getElementById("plan-count").textContent = ids.length;
+
+  list.innerHTML = ids.map(id => {
+    const p = plans[id];
+    return `
+      <div class="plan-card ${id === selectedId ? 'active' : ''}" onclick="selectPlan('${id}')">
+        <div class="plan-card-header">
+          <div class="plan-card-goal" title="${esc(p.goal)}">${esc(p.goal)}</div>
+          ${badge(p.status)}
+        </div>
+        <div class="plan-card-meta">${p.steps} steps · cost ${p.cost.toFixed(1)} · ${id.slice(0,8)}…</div>
+      </div>`;
+  }).join("");
+}
+
+// ── Select & render detail ────────────────────────────────────────────────────
+function selectPlan(planId) {
+  selectedId = planId;
+  renderPlanList();   // re-render to update active class
+  renderDetail(planId);
+}
+
+function renderDetail(planId) {
+  const p = plans[planId];
+  if (!p) return;
+
+  const done    = p.status === "success";
+  const failed  = p.status === "failure";
+  const running = p.status === "running";
+
+  const pct = done ? 100 : failed ? 100 : running ? 50 : 0;
+  const barClass = done ? "success" : failed ? "failure" : "";
+
+  const stepsHtml = (p.actions || []).map((a, i) => {
+    let cls = "";
+    if (done)  cls = "done";
+    if (failed && i === p.actions.length - 1) cls = "failed";
+    return `
+      <div class="step-row ${cls}">
+        <div class="step-num">${a.step !== undefined ? a.step : i}</div>
+        <div class="step-name">${esc(a.name)}</div>
+        <div class="step-cost">cost ${(a.cost ?? 1).toFixed(1)}</div>
+      </div>`;
+  }).join("");
+
+  const canExec   = p.status === "pending" || p.status === "failure";
+  const canReplan = p.status === "failure";
+
+  document.getElementById("detail").innerHTML = `
+    <div id="detail-header">
+      <div id="detail-goal">${esc(p.goal)}</div>
+      <div id="detail-actions">
+        ${canExec   ? `<button class="btn btn-sm btn-success" onclick="executeAgain('${planId}')">Execute</button>` : ""}
+        ${canReplan ? `<button class="btn btn-sm btn-danger"  onclick="replan('${planId}')">Replan</button>` : ""}
+        ${running   ? `<button class="btn btn-sm btn-neutral" disabled>Running…</button>` : ""}
+      </div>
+    </div>
+
+    <div id="detail-meta">
+      <div class="meta-item"><span class="meta-label">Plan ID</span>
+        <span class="meta-value">${planId.slice(0,16)}…</span></div>
+      <div class="meta-item"><span class="meta-label">Status</span>
+        <span class="meta-value">${badge(p.status)}</span></div>
+      <div class="meta-item"><span class="meta-label">Steps</span>
+        <span class="meta-value">${p.steps}</span></div>
+      <div class="meta-item"><span class="meta-label">Cost</span>
+        <span class="meta-value">${p.cost.toFixed(1)}</span></div>
+    </div>
+
+    <div id="progress-wrap">
+      <div id="progress-bar" class="${barClass}" style="width:${pct}%"></div>
+    </div>
+
+    <div id="steps-wrap">
+      <h2>Action Sequence</h2>
+      <div id="steps-list">${stepsHtml || '<p style="color:var(--muted);font-size:13px;">No actions.</p>'}</div>
+    </div>
+
+    <div id="log-wrap">
+      <h2>Log</h2>
+      <div id="log"></div>
+    </div>`;
+}
+
+async function executeAgain(planId) {
+  try {
+    await api("POST", `/execute/${planId}`);
+    plans[planId].status = "running";
+    renderPlanList();
+    renderDetail(planId);
+    startPolling(planId);
+    log(`Re-executing ${planId.slice(0,8)}…`, "info");
+  } catch (e) { showToast(e.message, true); }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+async function api(method, path, body) {
+  const opts = { method, headers: { "Content-Type": "application/json" } };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(`${HUB}${path}`, opts);
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ detail: r.statusText }));
+    throw new Error(err.detail || r.statusText);
+  }
+  return r.json();
+}
+
+function badge(status) {
+  const map = {
+    pending: "badge-pending",
+    running: "badge-running",
+    success: "badge-success",
+    failure: "badge-failure",
+  };
+  return `<span class="badge ${map[status] || 'badge-pending'}">${status || 'pending'}</span>`;
+}
+
+function esc(s) {
+  return String(s)
+    .replace(/&/g,"&amp;").replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+
+let _logEl = null;
+function log(msg, type = "info") {
+  _logEl = _logEl || document.getElementById("log");
+  if (!_logEl) return;
+  const ts   = new Date().toLocaleTimeString();
+  const line = document.createElement("div");
+  line.className = `log-${type}`;
+  line.textContent = `[${ts}] ${msg}`;
+  _logEl.appendChild(line);
+  _logEl.scrollTop = _logEl.scrollHeight;
+}
+
+let _toastTimer = null;
+function showToast(msg, isError = false) {
+  const el = document.getElementById("toast");
+  el.textContent  = msg;
+  el.className    = "show" + (isError ? " toast-error" : "");
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => { el.className = ""; }, 3500);
+}
+</script>
+</body>
+</html>
