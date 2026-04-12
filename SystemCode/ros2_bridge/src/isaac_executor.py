@@ -207,34 +207,40 @@ class IsaacSimExecutor:
     Uses RMPflow for collision-aware motion planning.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, render: bool = True) -> None:
         self._world    = None
         self._robot    = None
         self._rmpflow  = None
         self._art_ctrl = None
         self._objects: dict[str, Any] = {}
+        self._render   = render   # True = update GUI viewport each step
         self._init_sim()
 
     def _init_sim(self) -> None:
+        # ── Isaac Sim 5.1 API (isaacsim.* namespace) ──────────────────────────
+        # SimulationApp MUST be created before any other omni.* imports.
+        # It is created in __main__ (GUI mode) or here for headless use.
         try:
-            from omni.isaac.core import World
-            from omni.isaac.franka import Franka
-            from omni.isaac.core.objects import DynamicCuboid
-            from omni.isaac.motion_generation import RmpFlow, ArticulationMotionPolicy
-            from omni.isaac.core.utils.stage import add_reference_to_stage
             import numpy as np
+            from isaacsim.core.api.world import World
+            from isaacsim.robot.manipulators.examples.franka import Franka
+            from isaacsim.core.api.objects import DynamicCuboid
+            from isaacsim.robot_motion.motion_generation import (
+                RmpFlow, ArticulationMotionPolicy
+            )
         except ImportError as e:
             raise RuntimeError(
-                "Isaac Sim Python API not available. "
-                "Run with ~/.local/share/ov/pkg/isaac-sim-5.1.0/python.sh "
-                f"or set MOCK_ISAAC=1. Original error: {e}"
+                "Isaac Sim 5.1 Python API not available. "
+                "Launch with:\n"
+                "  ~/.local/share/ov/pkg/isaac-sim-5.1.0/python.sh isaac_executor.py\n"
+                f"or set MOCK_ISAAC=1 for the software simulation. Error: {e}"
             )
 
         self._np = np
 
         self._world = World(stage_units_in_meters=1.0)
 
-        # Ground plane + table
+        # Ground plane
         self._world.scene.add_default_ground_plane()
 
         # Franka FR3 at origin
@@ -242,36 +248,35 @@ class IsaacSimExecutor:
             Franka(
                 prim_path="/World/Franka",
                 name="franka",
-                end_effector_prim_name="panda_hand",
             )
         )
 
-        # Default tabletop objects — overridden by world_state updates
+        # Tabletop objects
         colours = {
-            "red_cube":       np.array([0.8, 0.1, 0.1]),
-            "blue_cylinder":  np.array([0.1, 0.1, 0.8]),
-            "green_sphere":   np.array([0.1, 0.7, 0.1]),
+            "red_cube":      np.array([0.8, 0.1, 0.1]),
+            "blue_cylinder": np.array([0.1, 0.1, 0.8]),
+            "green_sphere":  np.array([0.1, 0.7, 0.1]),
         }
         initial_positions = {
             "red_cube":      np.array(ZONE_POSITIONS["zone_a"]),
             "blue_cylinder": np.array(ZONE_POSITIONS["zone_b"]),
             "green_sphere":  np.array(ZONE_POSITIONS["zone_c"]),
         }
-        for name, colour in colours.items():
+        for obj_name, colour in colours.items():
             obj = self._world.scene.add(
                 DynamicCuboid(
-                    prim_path=f"/World/{name}",
-                    name=name,
-                    position=initial_positions[name],
+                    prim_path=f"/World/{obj_name}",
+                    name=obj_name,
+                    position=initial_positions[obj_name],
                     scale=np.array([0.05, 0.05, 0.05]),
                     color=colour,
                 )
             )
-            self._objects[name] = obj
+            self._objects[obj_name] = obj
 
         self._world.reset()
 
-        # RMPflow motion planner
+        # RMPflow motion planner (Isaac Sim 5.1 path)
         rmpflow_config = RmpFlow(
             robot_description_path=self._robot.rmpflow_robot_description_path,
             rmpflow_config_path=self._robot.rmpflow_config_path,
@@ -303,7 +308,7 @@ class IsaacSimExecutor:
             self._art_ctrl.apply_action(
                 self._rmpflow.get_next_articulation_action()
             )
-            self._world.step(render=False)
+            self._world.step(render=self._render)
 
             ee_pos, _ = self._robot.end_effector.get_world_pose()
             if np.linalg.norm(ee_pos - position) < tol:
@@ -312,19 +317,18 @@ class IsaacSimExecutor:
         return False  # tol not reached within max_steps
 
     def _open_gripper(self, steps: int = 50) -> None:
-        import numpy as np
         for _ in range(steps):
             self._robot.gripper.apply_action(
                 self._robot.gripper.forward(action="open")
             )
-            self._world.step(render=False)
+            self._world.step(render=self._render)
 
     def _close_gripper(self, steps: int = 50) -> None:
         for _ in range(steps):
             self._robot.gripper.apply_action(
                 self._robot.gripper.forward(action="close")
             )
-            self._world.step(render=False)
+            self._world.step(render=self._render)
 
     def execute_step(self, step: int, action: ParsedAction) -> StepResult:
         import numpy as np
@@ -520,8 +524,16 @@ class IsaacExecutor:
 
 
 # ── Standalone CLI entry point ────────────────────────────────────────────────
-# Usage (mock):   python3 isaac_executor.py '{"plan_id":"abc","actions":[...]}'
-# Usage (real):   MOCK_ISAAC=0 ~/.../python.sh isaac_executor.py '{"plan_id":...}'
+# Mock (system Python):
+#   python3 isaac_executor.py '{"plan_id":"abc","actions":[...]}'
+#
+# Real Isaac Sim GUI (RTX GPU required):
+#   MOCK_ISAAC=0 HUB_URL=http://localhost:8000 \
+#   ~/.local/share/ov/pkg/isaac-sim-5.1.0/python.sh \
+#   SystemCode/ros2_bridge/src/isaac_executor.py '{"plan_id":"<id>","actions":[...]}'
+#
+# Headless (no window):
+#   MOCK_ISAAC=0 ISAAC_HEADLESS=1 ~/.../python.sh isaac_executor.py '...'
 
 if __name__ == "__main__":
     import json
@@ -530,13 +542,32 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO,
                         format="%(levelname)s %(name)s: %(message)s")
 
+    if not MOCK_ISAAC:
+        # SimulationApp MUST be the first Isaac Sim import — creates the Omniverse window
+        headless = os.environ.get("ISAAC_HEADLESS", "0") == "1"
+        from isaacsim import SimulationApp
+        _app = SimulationApp({"headless": headless, "renderer": "RaytracedLighting"})
+
     if len(sys.argv) < 2:
-        print("Usage: isaac_executor.py '<json>'")
-        sys.exit(1)
+        # No payload: run a default demo plan so the window stays open
+        DEMO_PLAN = {
+            "plan_id": "demo-000",
+            "actions": [
+                {"step": 0, "name": "pick(franka,red_cube,zone_a)",  "cost": 1.0},
+                {"step": 1, "name": "move_to(franka,zone_a,zone_c)", "cost": 1.0},
+                {"step": 2, "name": "place(franka,red_cube,zone_c)", "cost": 1.0},
+            ],
+        }
+        payload = DEMO_PLAN
+        print("[info] No payload given — running default demo plan.")
+    else:
+        payload = json.loads(sys.argv[1])
 
-    payload = json.loads(sys.argv[1])
-    executor = IsaacExecutor(plan_id=payload["plan_id"])
-
-    success = executor.run_plan(payload["actions"])
+    executor = IsaacExecutor(plan_id=payload["plan_id"], mock=MOCK_ISAAC)
+    success  = executor.run_plan(payload["actions"])
     print(json.dumps({"success": success}))
+
+    if not MOCK_ISAAC:
+        _app.close()
+
     sys.exit(0 if success else 1)
