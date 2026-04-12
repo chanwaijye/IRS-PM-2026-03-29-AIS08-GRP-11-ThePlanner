@@ -57,9 +57,15 @@ log = logging.getLogger(__name__)
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-MOCK_ISAAC    = os.environ.get("MOCK_ISAAC", "1") == "1"
-MOCK_FAIL_STEP = int(os.environ.get("MOCK_FAIL_STEP", "-1"))   # -1 = no injection
-MOCK_STEP_DELAY = float(os.environ.get("MOCK_STEP_DELAY", "0.05"))  # seconds per step
+MOCK_ISAAC      = os.environ.get("MOCK_ISAAC", "1") == "1"
+MOCK_FAIL_STEP  = int(os.environ.get("MOCK_FAIL_STEP", "-1"))    # -1 = no injection
+MOCK_STEP_DELAY = float(os.environ.get("MOCK_STEP_DELAY", "0.05"))  # seconds per mock step
+
+# Real Isaac Sim: sleep this many seconds after every rendered physics step.
+# Default 1/30 s → ~30 fps real-time motion visible to the human eye.
+# Set ISAAC_SIM_RATE=60 for smoother, ISAAC_SIM_RATE=10 for slower demo.
+_ISAAC_SIM_RATE = float(os.environ.get("ISAAC_SIM_RATE", "30"))  # fps
+ISAAC_STEP_SLEEP = 1.0 / max(_ISAAC_SIM_RATE, 1.0)
 
 HUB_URL = os.environ.get("HUB_URL", "http://localhost:8000")
 
@@ -303,6 +309,8 @@ class IsaacSimExecutor:
                 self._rmpflow.get_next_articulation_action()
             )
             self._world.step(render=self._render)
+            if self._render:
+                time.sleep(ISAAC_STEP_SLEEP)
 
             ee_pos, _ = self._robot.end_effector.get_world_pose()
             if np.linalg.norm(ee_pos - position) < tol:
@@ -316,6 +324,8 @@ class IsaacSimExecutor:
                 self._robot.gripper.forward(action="open")
             )
             self._world.step(render=self._render)
+            if self._render:
+                time.sleep(ISAAC_STEP_SLEEP)
 
     def _close_gripper(self, steps: int = 50) -> None:
         for _ in range(steps):
@@ -323,6 +333,8 @@ class IsaacSimExecutor:
                 self._robot.gripper.forward(action="close")
             )
             self._world.step(render=self._render)
+            if self._render:
+                time.sleep(ISAAC_STEP_SLEEP)
 
     def execute_step(self, step: int, action: ParsedAction) -> StepResult:
         import numpy as np
