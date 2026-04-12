@@ -72,7 +72,8 @@ class SceneKnowledgeGraph:
     def set_on(self, obj: str, loc: str) -> None:
         self._require(obj, loc)
         self._g.add_edge(obj, loc, rel=REL_ON)
-        self._g.add_edge(obj, loc, rel=REL_IN_ZONE)
+        # REL_IN_ZONE is implied by REL_ON for the same location;
+        # storing both on a DiGraph would overwrite the REL_ON edge.
 
     def set_robot_at(self, robot: str, loc: str) -> None:
         self._require(robot, loc)

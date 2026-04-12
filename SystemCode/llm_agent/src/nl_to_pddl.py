@@ -132,6 +132,7 @@ SYSTEM_PROMPT = textwrap.dedent("""\
 
 def _is_valid_pddl(pddl: str) -> bool:
     """Returns True if pddl looks like a structurally valid problem definition."""
+    import re as _re
     text = pddl.strip()
     if not text.startswith("(define"):
         return False
@@ -139,9 +140,9 @@ def _is_valid_pddl(pddl: str) -> bool:
         return False
     if "(:objects" not in text:
         return False
-    if "(:init" not in text:
+    if not _re.search(r'\(:init[\s(]', text):
         return False
-    if "(:goal" not in text:
+    if not _re.search(r'\(:goal[\s(]', text):
         return False
     # Balanced parentheses check
     depth = 0
