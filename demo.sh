@@ -3,8 +3,9 @@
 #
 # Modes (set via env var or flag):
 #   MOCK=1   (default) No Isaac Sim, no Ollama needed. Everything simulated.
-#   MOCK=0             Real Ollama (llama3:8b) + real planner binary.
-#                      Isaac Sim still mocked unless MOCK_ISAAC=0 separately.
+#   MOCK=0             Real Ollama (llama3:8b) + real planner + Isaac Sim GUI.
+#                      Requires ~/.local/share/ov/pkg/isaac-sim-5.1.0/python.sh
+#                      Override Isaac Sim path: ISAAC_PY=/path/to/python.sh
 #
 # Usage:
 #   ./demo.sh                                  # mock demo, default goal
@@ -76,7 +77,7 @@ echo "║        ThePlanner — End-to-End Demo      ║"
 echo "╚══════════════════════════════════════════╝"
 echo -e "${RST}"
 echo -e "  Goal  : ${BLD}${GOAL}${RST}"
-echo -e "  Mode  : $([ "$MOCK" = "1" ] && echo "${GRN}Mock (no GPU/Ollama needed)${RST}" || echo "${YLW}Real Ollama + planner${RST}")"
+echo -e "  Mode  : $([ "$MOCK" = "1" ] && echo "${GRN}Mock (no GPU/Ollama needed)${RST}" || echo "${YLW}Real Ollama + planner + Isaac Sim GUI${RST}")"
 echo -e "  Fail  : $([ "$FAIL_STEP" != "-1" ] && echo "${YLW}inject at step ${FAIL_STEP} → replan demo${RST}" || echo "none")"
 echo ""
 
@@ -93,7 +94,9 @@ fi
 step "Starting Agent Hub (port ${HUB_PORT})"
 
 MOCK_PLANNER_VAL="$( [ "$MOCK" = "1" ] && echo "1" || echo "0" )"
-MOCK_ISAAC_VAL="1"   # Isaac Sim always mocked in demo
+MOCK_ISAAC_VAL="$(   [ "$MOCK" = "1" ] && echo "1" || echo "0" )"
+
+ISAAC_PY="${ISAAC_PY:-${HOME}/.local/share/ov/pkg/isaac-sim-5.1.0/python.sh}"
 
 export MOCK_PLANNER="$MOCK_PLANNER_VAL"
 export MOCK_ISAAC="$MOCK_ISAAC_VAL"
@@ -156,10 +159,12 @@ for a in data['actions']:
 "
 
 # ── Step 4: Execute plan ──────────────────────────────────────────────────────
-step "Executing Plan (Agent 4 — Isaac Sim mock)"
 
-set +e
-python3 - <<PYEOF
+if [[ "$MOCK" = "1" ]]; then
+  step "Executing Plan (Agent 4 — mock)"
+
+  set +e
+  python3 - <<PYEOF
 import sys, os, json, requests
 sys.path.insert(0, "${HUB_SRC}")
 sys.path.insert(0, "${REPO_ROOT}/SystemCode/llm_agent/src")
@@ -191,8 +196,34 @@ executor._backend     = MockExecutor(fail_at_step=${FAIL_STEP}, step_delay=0.15)
 ok = executor.run_plan(actions)
 sys.exit(0 if ok else 1)
 PYEOF
-EXEC_EXIT=$?
-set -e
+  EXEC_EXIT=$?
+  set -e
+
+else
+  step "Executing Plan (Agent 4 — Isaac Sim 5.1 GUI)"
+
+  # Verify Isaac Sim python.sh exists
+  if [[ ! -x "$ISAAC_PY" ]]; then
+    error "Isaac Sim not found at ${ISAAC_PY}"
+    error "Set ISAAC_PY=/path/to/isaac-sim-X.Y.Z/python.sh or use MOCK=1"
+    exit 1
+  fi
+
+  # Build the actions JSON payload from the hub
+  ACTIONS_JSON=$(curl -sf "${HUB_URL}/plan/${PLAN_ID}" | \
+    python3 -c "import sys,json; d=json.load(sys.stdin); print(json.dumps({'plan_id':d['plan_id'],'actions':d['actions']}))")
+
+  info "Launching Isaac Sim — viewport will open shortly…"
+  info "isaac.py: ${ISAAC_PY}"
+
+  set +e
+  MOCK_ISAAC=0 \
+  HUB_URL="${HUB_URL}" \
+  PYTHONPATH="${REPO_ROOT}/SystemCode/llm_agent/src:${PYTHONPATH:-}" \
+  "${ISAAC_PY}" "${HUB_SRC}/isaac_executor.py" "${ACTIONS_JSON}"
+  EXEC_EXIT=$?
+  set -e
+fi
 
 # ── Step 5: Monitor watches and replans if needed ─────────────────────────────
 step "Monitor (Agent 3)"
