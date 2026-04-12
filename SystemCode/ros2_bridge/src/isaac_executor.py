@@ -216,12 +216,11 @@ class IsaacSimExecutor:
     """
 
     def __init__(self, render: bool = True) -> None:
-        self._world    = None
-        self._robot    = None
-        self._rmpflow  = None
-        self._art_ctrl = None
+        self._world      = None
+        self._robot      = None
+        self._controller = None   # RMPFlowController
         self._objects: dict[str, Any] = {}
-        self._render   = render   # True = update GUI viewport each step
+        self._render     = render
         self._init_sim()
 
     def _init_sim(self) -> None:
@@ -232,9 +231,11 @@ class IsaacSimExecutor:
             import numpy as np
             from isaacsim.core.api.world import World
             from isaacsim.robot.manipulators.examples.franka import Franka
-            from isaacsim.core.api.objects import DynamicCuboid
+            from isaacsim.core.api.objects import DynamicCuboid, VisualCuboid
             from isaacsim.core.utils.viewports import set_camera_view
-            import isaacsim.robot_motion.motion_generation as mg
+            from isaacsim.robot.manipulators.examples.franka.controllers.rmpflow_controller import (
+                RMPFlowController,
+            )
         except ImportError as e:
             raise RuntimeError(
                 "Isaac Sim 5.1 Python API not available. "
@@ -246,32 +247,49 @@ class IsaacSimExecutor:
         self._np = np
 
         self._world = World(stage_units_in_meters=1.0)
-
-        # Ground plane + table surface visual
         self._world.scene.add_default_ground_plane()
 
-        # Position camera: side-front view of robot reaching toward zones
+        # Camera: side-front view of robot reaching toward the zones
         if self._render:
             try:
                 set_camera_view(
-                    eye=np.array([-0.5, -1.8, 1.2]),   # behind-left, elevated
-                    target=np.array([0.5,  0.0, 0.2]),  # look at zone area
+                    eye=np.array([-0.3, -1.5, 1.0]),
+                    target=np.array([0.5, 0.0, 0.1]),
                     camera_prim_path="/OmniverseKit_Persp",
                 )
             except Exception:
-                pass  # non-fatal if viewport not ready yet
+                pass
 
-        # Franka FR3 at origin — USD fetched from NVIDIA S3 on first run
+        # Franka FR3 — USD fetched from NVIDIA S3 on first run (~5 s)
         self._robot = self._world.scene.add(
             Franka(
                 prim_path="/World/Franka",
                 name="franka",
-                end_effector_prim_name="panda_hand",  # track palm, not fingertip
+                end_effector_prim_name="panda_hand",
             )
         )
 
-        # Tabletop objects
-        colours = {
+        # Coloured zone markers (thin flat slabs, static)
+        zone_colours = {
+            "zone_a": np.array([0.9, 0.2, 0.2]),   # red tint
+            "zone_b": np.array([0.2, 0.9, 0.2]),   # green tint
+            "zone_c": np.array([0.2, 0.2, 0.9]),   # blue tint
+        }
+        zone_labels = {"zone_a": "A", "zone_b": "B", "zone_c": "C"}
+        for zone, pos in ZONE_POSITIONS.items():
+            marker_pos = np.array([pos[0], pos[1], 0.002])  # flat on ground
+            self._world.scene.add(
+                VisualCuboid(
+                    prim_path=f"/World/zone_marker_{zone}",
+                    name=f"zone_marker_{zone}",
+                    position=marker_pos,
+                    scale=np.array([0.25, 0.25, 0.004]),
+                    color=zone_colours[zone],
+                )
+            )
+
+        # Tabletop objects (dynamic, graspable)
+        obj_colours = {
             "red_cube":      np.array([0.8, 0.1, 0.1]),
             "blue_cylinder": np.array([0.1, 0.1, 0.8]),
             "green_sphere":  np.array([0.1, 0.7, 0.1]),
@@ -281,7 +299,7 @@ class IsaacSimExecutor:
             "blue_cylinder": np.array(ZONE_POSITIONS["zone_b"]),
             "green_sphere":  np.array(ZONE_POSITIONS["zone_c"]),
         }
-        for obj_name, colour in colours.items():
+        for obj_name, colour in obj_colours.items():
             obj = self._world.scene.add(
                 DynamicCuboid(
                     prim_path=f"/World/{obj_name}",
@@ -293,30 +311,25 @@ class IsaacSimExecutor:
             )
             self._objects[obj_name] = obj
 
-        # reset() initialises physics and calls initialize() on all scene objects
+        # Initialise physics and start simulation
         self._world.reset()
-
-        # play() starts the simulation — required before world.step() does anything
         self._world.play()
 
-        # Warm-up: render frames so USD assets (Franka from S3) fully appear
-        log.info("Warming up scene (%d frames)…", 60)
-        for _ in range(60):
+        # Warm-up frames — lets USD assets (Franka from S3) fully appear
+        log.info("Warming up scene (120 frames)…")
+        for _ in range(120):
             self._world.step(render=self._render)
             if self._render:
                 time.sleep(ISAAC_STEP_SLEEP)
 
-        # RMPflow — load config by robot name (no manual paths needed in 5.1)
-        rmpflow_cfg = mg.interface_config_loader.load_supported_motion_policy_config(
-            "Franka", "RMPflow"
+        # RMPFlowController — handles set_end_effector_target + update_world + apply
+        # Using the high-level controller avoids missing update_world() calls.
+        self._controller = RMPFlowController(
+            name="rmpflow_ctrl",
+            robot_articulation=self._robot,
+            physics_dt=self._world.get_physics_dt(),
         )
-        self._rmpflow = mg.lula.motion_policies.RmpFlow(**rmpflow_cfg)
-        self._art_ctrl = mg.ArticulationMotionPolicy(
-            self._robot, self._rmpflow, self._world.get_physics_dt()
-        )
-        # Anchor planner to robot's world pose
         robot_pos, robot_ori = self._robot.get_world_pose()
-        self._rmpflow.set_robot_base_pose(robot_pos, robot_ori)
         log.info("Scene ready — robot at %s", robot_pos)
 
     def _step_to_target(
@@ -324,29 +337,37 @@ class IsaacSimExecutor:
         position: "np.ndarray",
         orientation: "np.ndarray | None" = None,
         max_steps: int = 500,
-        tol: float = 0.01,
+        tol: float = 0.02,
     ) -> bool:
-        """Step the simulation until EEF reaches target position."""
+        """Step the simulation until EEF reaches target position.
+
+        Uses RMPFlowController.forward() which internally calls:
+          set_end_effector_target → update_world → get_next_articulation_action
+        Missing update_world() was the cause of no robot motion.
+        """
         import numpy as np
 
-        if orientation is None:
-            orientation = np.array([1.0, 0.0, 0.0, 0.0])  # w,x,y,z upright
-
-        self._rmpflow.set_end_effector_target(position, orientation)
-
-        for _ in range(max_steps):
-            self._art_ctrl.apply_action(
-                self._rmpflow.get_next_articulation_action()
+        for i in range(max_steps):
+            # forward() returns ArticulationAction; apply it to the robot
+            action = self._controller.forward(
+                target_end_effector_position=position,
+                target_end_effector_orientation=orientation,
             )
+            self._robot.apply_action(action)
             self._world.step(render=self._render)
             if self._render:
                 time.sleep(ISAAC_STEP_SLEEP)
 
             ee_pos, _ = self._robot.end_effector.get_world_pose()
-            if np.linalg.norm(ee_pos - position) < tol:
+            dist = np.linalg.norm(ee_pos - position)
+            if i % 50 == 0:
+                log.debug("step %d: EEF dist to target = %.4f m", i, dist)
+            if dist < tol:
                 return True
 
-        return False  # tol not reached within max_steps
+        log.warning("_step_to_target: did not converge in %d steps (final dist %.3f m)",
+                    max_steps, np.linalg.norm(ee_pos - position))
+        return False
 
     def _open_gripper(self, steps: int = 50) -> None:
         for _ in range(steps):
