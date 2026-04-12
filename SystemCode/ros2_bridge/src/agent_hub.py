@@ -53,6 +53,15 @@ DOMAIN_FILE = os.environ.get(
 MOCK_PLANNER = os.environ.get("MOCK_PLANNER", "0") == "1"
 MOCK_ISAAC   = os.environ.get("MOCK_ISAAC",   "1") == "1"
 
+# Path to Isaac Sim's bundled python.sh (only needed when MOCK_ISAAC=0)
+_DEFAULT_ISAAC_PY = os.path.expanduser(
+    "~/.local/share/ov/pkg/isaac-sim-5.1.0/python.sh"
+)
+ISAAC_PY = os.environ.get("ISAAC_PY", _DEFAULT_ISAAC_PY)
+
+# Absolute path to isaac_executor.py (same directory as this file)
+_EXECUTOR_SCRIPT = os.path.join(os.path.dirname(__file__), "isaac_executor.py")
+
 # ── App ───────────────────────────────────────────────────────────────────
 
 app = FastAPI(title="ThePlanner Agent Hub", version="0.1.0")
@@ -222,9 +231,28 @@ def post_execute(plan_id: str, background_tasks: BackgroundTasks) -> dict[str, s
     record.updated = datetime.utcnow().isoformat()
 
     def _run() -> None:
-        from isaac_executor import IsaacExecutor
-        executor = IsaacExecutor(plan_id=plan_id, mock=MOCK_ISAAC)
-        executor.run_plan(record.plan)
+        if MOCK_ISAAC:
+            # Mock path: import directly (no Isaac Sim needed)
+            from isaac_executor import IsaacExecutor
+            executor = IsaacExecutor(plan_id=plan_id, mock=True)
+            executor.run_plan(record.plan)
+        else:
+            # Real path: launch isaac-sim python.sh as a subprocess.
+            # The hub (system Python/uvicorn) cannot import isaacsim directly.
+            payload = json.dumps({
+                "plan_id": plan_id,
+                "actions": record.plan,
+            })
+            env = {
+                **os.environ,
+                "MOCK_ISAAC": "0",
+                "HUB_URL": f"http://127.0.0.1:{os.environ.get('HUB_PORT', '8000')}",
+            }
+            subprocess.run(
+                [ISAAC_PY, _EXECUTOR_SCRIPT, payload],
+                env=env,
+                check=False,   # non-zero exit handled via /execute_status callbacks
+            )
 
     background_tasks.add_task(_run)
     return {"plan_id": plan_id, "status": "running"}
