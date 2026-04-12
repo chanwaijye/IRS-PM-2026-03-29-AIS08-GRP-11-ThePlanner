@@ -209,6 +209,162 @@ Plan PDDLPlanner::solve() {
 | Build System | CMake 3.20 + GCC 11/12 | C++17 standard; GCC 12 recommended for Isaac Sim 4.x |
 | Web UI | React + Three.js + D3.js | 3D viewer + plan timeline |
 
+### 5.5 End-to-End Data Flow
+
+The diagram below traces every data transformation from a natural-language goal string to a completed robot motion and back through the replanning loop.
+
+```{.mermaid width=100%}
+flowchart TD
+    User([User / Operator])
+    Hub["Agent Hub<br>(FastAPI — agent_hub.py)<br>POST /goal"]
+    KG["Scene Knowledge Graph<br>(knowledge_graph.py)<br>NetworkX DiGraph"]
+    LLM["Agent 1 — LLM Reasoner<br>(nl_to_pddl.py)<br>Ollama · LLaMA-3 8B"]
+    VAL{PDDL valid?}
+    FB["Fallback Template<br>(_build_fallback_pddl)"]
+    PDDL[(PDDL Problem<br>.pddl string)]
+    DOM[(PDDL Domain<br>tabletop.pddl)]
+    Parser["C++ PDDL Parser<br>(pddl_parser.cpp)<br>recursive-descent"]
+    Ground["Grounder<br>(pddl_parser.cpp)<br>cross-product instantiation"]
+    AStar["Agent 2 — A* Planner<br>(astar_planner.cpp)<br>bitset state space"]
+    GA["GA Plan Ranker<br>(ga_ranker.cpp)<br>minimise steps + cost"]
+    PlanJSON[(JSON Plan<br>actions list)]
+    Store["In-memory Plan Store<br>(PlanRecord)"]
+    Isaac["Agent 4 — Isaac Sim 5.1<br>ROS2 Jazzy bridge"]
+    Monitor["Agent 3 — Monitor<br>POST /world_state"]
+    Replan["Replanner<br>POST /replan"]
+
+    User -->|"Natural-language goal<br>e.g. 'Move red cube to zone C'"| Hub
+    Hub -->|to_scene_context| KG
+    KG -->|"scene_context dict<br>{robot, objects, locations}"| LLM
+    LLM -->|"few-shot prompted<br>LLaMA-3 generate"| VAL
+    VAL -->|yes| PDDL
+    VAL -->|no / LLM unavailable| FB
+    FB --> PDDL
+    DOM --> Parser
+    PDDL --> Parser
+    Parser --> Ground
+    Ground -->|"grounded actions<br>+ init/goal bitsets"| AStar
+    AStar -->|optimal action sequence| GA
+    GA -->|ranked plan| PlanJSON
+    PlanJSON --> Store
+    Store -->|plan_id + steps + cost| Hub
+    Hub -->|GoalResponse| User
+
+    Store -->|action sequence| Isaac
+    Isaac -->|execution feedback| Monitor
+    Monitor -->|updated scene_context| KG
+    Monitor -->|triggers| Replan
+    Replan -->|new goal + current KG| Hub
+```
+
+**Layer breakdown:**
+
+| Layer | Components | Key transformation |
+|---|---|---|
+| NL Input | Hub + KG | Goal string + scene graph → `scene_context` JSON |
+| LLM Reasoning | `nl_to_pddl.py` | `scene_context` + goal → PDDL problem string (+ validation/fallback) |
+| Classical Planning | `pddl_parser.cpp`, `astar_planner.cpp`, `ga_ranker.cpp` | PDDL domain + problem → optimal JSON action sequence |
+| Execution | Isaac Sim 5.1 + ROS2 Jazzy | Action names → robot joint trajectories + sensor feedback |
+| World-state update | Monitor + Hub | Post-execution scene → KG rebuild → replan trigger if failed |
+
+**Replanning sequence:**
+
+```{.mermaid width=100%}
+sequenceDiagram
+    participant User
+    participant Hub as Agent Hub
+    participant KG as Knowledge Graph
+    participant LLM as Agent 1 (LLM)
+    participant Planner as Agent 2 (C++ Planner)
+    participant Isaac as Agent 4 (Isaac Sim)
+    participant Monitor as Agent 3 (Monitor)
+
+    User->>Hub: POST /goal {"goal": "Move red cube to zone C"}
+    Hub->>KG: to_scene_context()
+    KG-->>Hub: scene_context
+    Hub->>LLM: nl_to_pddl_problem(goal, scene)
+    LLM-->>Hub: PDDL problem string
+    Hub->>Planner: planner_node domain.pddl problem.pddl
+    Planner-->>Hub: JSON actions
+    Hub-->>User: {plan_id, steps, cost}
+
+    Hub->>Isaac: execute action sequence
+    Isaac-->>Monitor: step feedback (success/fail)
+
+    alt Execution failure
+        Monitor->>Hub: POST /world_state (updated scene)
+        Monitor->>Hub: POST /replan {plan_id}
+        Hub->>KG: rebuild from new world state
+        Hub->>LLM: re-generate PDDL
+        Hub->>Planner: re-plan
+        Hub->>Isaac: execute new plan
+    end
+
+    Isaac-->>Monitor: goal reached
+    Monitor->>Hub: POST /status update → success
+```
+
+---
+
+### 5.6 Hybrid Reasoning Pipeline
+
+ThePlanner uses a **hybrid reasoning architecture**: the LLM handles natural-language understanding and PDDL specification, while a classical A* planner handles optimal action sequencing. A genetic algorithm re-ranks candidate plans by multi-objective cost.
+
+#### Stage 1 — Scene Grounding (Knowledge Graph)
+
+Before any LLM call, the system queries the Scene KG (`knowledge_graph.py`) to produce a structured `scene_context` dict. The KG is a NetworkX directed graph:
+
+| Node type | Examples |
+|---|---|
+| `robot` | `franka` |
+| `object` | `red_cube`, `glass_sphere` |
+| `location` | `zone_a`, `zone_b`, `zone_c` |
+
+Edges encode spatial relations (`on`, `in_zone`, `stacked_on`) and affordances (`graspable`, `stackable`). **Grounding prevents hallucination** — the LLM receives exact object names and locations from perception rather than inventing them.
+
+#### Stage 2 — LLM Reasoning (Agent 1)
+
+The system prompt uses **few-shot chain-of-thought** with three worked examples covering move, stack, and fragile-object handling. Temperature is set to 0.2 (deterministic translation, not creative generation).
+
+LLM output passes through `_is_valid_pddl()`: checks `(define`, required sections, balanced parentheses. If validation fails **or** Ollama is unreachable, `_build_fallback_pddl()` constructs a valid PDDL problem directly from `scene_context` without any LLM call. **The system always produces a syntactically valid PDDL problem.**
+
+#### Stage 3 — Classical A* Planning (Agent 2)
+
+World state is encoded as a **bitset** indexed by `PredicateIndex`. State equality is O(1). The heuristic:
+
+```
+h(state) = number of unsatisfied goal predicates
+f = g + h   (g = actions taken, h = admissible)
+```
+
+The heuristic is admissible because each action satisfies ≥ 1 predicate. **A* with an admissible heuristic returns the shortest plan.** The parser cross-products action schemas with all typed object tuples, producing flat `GroundedAction` structs with precondition/effect bitsets for O(1) applicability checks.
+
+#### Stage 4 — GA Plan Ranking
+
+When multiple optimal-length plans exist, the GA selects the best:
+
+```
+fitness = α × plan_length + β × total_cost + γ × fragile_risk
+```
+
+where `fragile_risk` counts actions applied to fragile objects without the `gentle` modifier. The GA evolves a population of permutations for a fixed number of generations, returning the lowest-fitness individual.
+
+#### Stage 5 — World-State Update and Replanning
+
+After each Isaac Sim step, Agent 3 (Monitor) pushes `POST /world_state`. The hub rebuilds the KG from the new scene context. If an action fails mid-plan, `POST /replan` triggers a full re-run of Stages 1–4 with the updated KG as starting state.
+
+**Why Hybrid (LLM + Classical)?**
+
+| Concern | LLM alone | Classical alone | Hybrid |
+|---|---|---|---|
+| NL understanding | Good | None | Good |
+| Plan optimality | Not guaranteed | Guaranteed (A*) | Guaranteed |
+| Novel goal handling | Good | Requires manual PDDL | Good |
+| Execution speed | Slow (LLM latency) | Fast | Fast (LLM once, planner fast) |
+| Failure recovery | Unpredictable | Deterministic | Deterministic |
+
+The LLM is used **exactly once per goal** (high-latency, high-expressivity step). All subsequent reasoning — search, ranking, replanning — is deterministic classical AI: fast, verifiable, and optimal.
+
 ---
 
 ## 6. Data Collection & Knowledge Sources
