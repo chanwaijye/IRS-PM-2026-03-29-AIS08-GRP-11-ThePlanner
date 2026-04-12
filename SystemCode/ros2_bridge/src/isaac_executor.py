@@ -70,17 +70,19 @@ ISAAC_STEP_SLEEP = 1.0 / max(_ISAAC_SIM_RATE, 1.0)
 HUB_URL = os.environ.get("HUB_URL", "http://localhost:8000")
 
 # ── Tabletop zone positions (metres, Isaac Sim world frame) ───────────────────
-# Franka FR3 base at origin, table surface at z=0.77 m.
-# Zones laid out along the x-axis in front of the robot.
+# Robot base at origin on the ground plane (z=0).
+# Objects sit on the ground: z = cube_half_height = 0.025 m.
+# Zones are in the robot's reachable workspace (x: 0.3–0.6 m in front).
+# Reference: official FrankaPickPlace example uses [0.5, 0.0, 0.0258].
 
 ZONE_POSITIONS: dict[str, tuple[float, float, float]] = {
-    "zone_a": (-0.35, 0.0, 0.77),
-    "zone_b": ( 0.00, 0.0, 0.77),
-    "zone_c": ( 0.35, 0.0, 0.77),
+    "zone_a": (0.5, -0.25, 0.025),   # front-left
+    "zone_b": (0.5,  0.00, 0.025),   # front-centre
+    "zone_c": (0.5,  0.25, 0.025),   # front-right
 }
 
-# Pre-grasp hover height above table surface
-HOVER_Z_OFFSET = 0.12   # metres above object centre
+# Pre-grasp hover height above object centre
+HOVER_Z_OFFSET = 0.20   # metres — high enough to clear 5 cm cube + clearance
 
 # Franka FR3 joint configurations (radians)
 # Home: arm folded safe, gripper open
@@ -248,12 +250,12 @@ class IsaacSimExecutor:
         # Ground plane + table surface visual
         self._world.scene.add_default_ground_plane()
 
-        # Position camera to look at the tabletop scene from the front-left
+        # Position camera: side-front view of robot reaching toward zones
         if self._render:
             try:
                 set_camera_view(
-                    eye=np.array([1.5, -1.5, 1.8]),    # camera position (m)
-                    target=np.array([0.0, 0.0, 0.77]),  # look at table surface centre
+                    eye=np.array([-0.5, -1.8, 1.2]),   # behind-left, elevated
+                    target=np.array([0.5,  0.0, 0.2]),  # look at zone area
                     camera_prim_path="/OmniverseKit_Persp",
                 )
             except Exception:
@@ -261,7 +263,11 @@ class IsaacSimExecutor:
 
         # Franka FR3 at origin — USD fetched from NVIDIA S3 on first run
         self._robot = self._world.scene.add(
-            Franka(prim_path="/World/Franka", name="franka")
+            Franka(
+                prim_path="/World/Franka",
+                name="franka",
+                end_effector_prim_name="panda_hand",  # track palm, not fingertip
+            )
         )
 
         # Tabletop objects
