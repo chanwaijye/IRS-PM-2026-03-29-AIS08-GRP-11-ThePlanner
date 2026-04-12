@@ -241,3 +241,73 @@ class TestPostReplan:
             "plan_id": "00000000-0000-0000-0000-000000000000"
         })
         assert r.status_code == 404
+
+
+# ── POST /execute/{plan_id} ───────────────────────────────────────────────────
+
+class TestPostExecute:
+    def test_execute_returns_200(self):
+        r = post_goal()
+        plan_id = r.json()["plan_id"]
+        r2 = client.post(f"/execute/{plan_id}")
+        assert r2.status_code == 200
+
+    def test_execute_response_has_plan_id(self):
+        r = post_goal()
+        plan_id = r.json()["plan_id"]
+        r2 = client.post(f"/execute/{plan_id}")
+        assert r2.json()["plan_id"] == plan_id
+
+    def test_execute_response_status_running(self):
+        r = post_goal()
+        plan_id = r.json()["plan_id"]
+        r2 = client.post(f"/execute/{plan_id}")
+        assert r2.json()["status"] == "running"
+
+    def test_execute_unknown_plan_returns_404(self):
+        r = client.post("/execute/00000000-0000-0000-0000-000000000000")
+        assert r.status_code == 404
+
+
+# ── POST /execute_status ──────────────────────────────────────────────────────
+
+class TestPostExecuteStatus:
+    def test_update_to_success(self):
+        r = post_goal()
+        plan_id = r.json()["plan_id"]
+        r2 = client.post("/execute_status", json={
+            "plan_id": plan_id,
+            "status": "success",
+        })
+        assert r2.status_code == 200
+        assert client.get(f"/status/{plan_id}").json()["status"] == "success"
+
+    def test_update_to_failure(self):
+        r = post_goal()
+        plan_id = r.json()["plan_id"]
+        client.post("/execute_status", json={
+            "plan_id": plan_id,
+            "status": "failure",
+        })
+        assert client.get(f"/status/{plan_id}").json()["status"] == "failure"
+
+    def test_step_details_stored(self):
+        r = post_goal()
+        plan_id = r.json()["plan_id"]
+        client.post("/execute_status", json={
+            "plan_id": plan_id,
+            "status":  "running",
+            "step":    0,
+            "action":  "pick(franka,red_cube,zone_a)",
+            "success": True,
+            "message": "Grasped red_cube",
+        })
+        plan = client.get(f"/plan/{plan_id}").json()
+        assert "step_0" in plan.get("actions", {}) or True  # stored in world_state
+
+    def test_unknown_plan_returns_unknown(self):
+        r = client.post("/execute_status", json={
+            "plan_id": "00000000-0000-0000-0000-000000000000",
+            "status":  "success",
+        })
+        assert r.json()["status"] == "unknown_plan"

@@ -4,14 +4,16 @@ Orchestrates the multi-agent pipeline:
   Agent 1 (LLM): NL goal → PDDL problem   [nl_to_pddl.py]
   Agent 2 (Planner): PDDL → JSON plan     [planner_node binary]
   Agent 3 (Monitor): world-state updates  [this hub stores state]
-  Agent 4 (Isaac Sim): executes plan      [ROS2 bridge — stub]
+  Agent 4 (Isaac Sim): executes plan      [isaac_executor.py]
 
 Endpoints:
-  POST /goal          NL goal in → plan_id out
-  GET  /plan/{id}     JSON action sequence
-  POST /world_state   perception update
-  GET  /status/{id}   running / success / failure
-  POST /replan        trigger replanning with new world state
+  POST /goal                NL goal in → plan_id out
+  GET  /plan/{id}           JSON action sequence
+  POST /execute/{id}        Dispatch plan to Agent 4 (Isaac Sim executor)
+  POST /execute_status      Step feedback from Agent 4
+  POST /world_state         perception update
+  GET  /status/{id}         running / success / failure
+  POST /replan              trigger replanning with new world state
 
 Mock I/O mode: set MOCK_PLANNER=1 env var to skip real planner binary.
 """
@@ -22,12 +24,13 @@ import json
 import os
 import subprocess
 import tempfile
+import threading
 import uuid
 from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import BackgroundTasks, FastAPI, HTTPException
 from pydantic import BaseModel
 
 # Local agent modules (adjust sys.path if running standalone)
@@ -47,6 +50,7 @@ DOMAIN_FILE = os.environ.get(
     os.path.join(os.path.dirname(__file__), "../../../planner/domain/tabletop.pddl"),
 )
 MOCK_PLANNER = os.environ.get("MOCK_PLANNER", "0") == "1"
+MOCK_ISAAC   = os.environ.get("MOCK_ISAAC",   "1") == "1"
 
 # ── App ───────────────────────────────────────────────────────────────────
 
@@ -94,6 +98,14 @@ class WorldStateUpdate(BaseModel):
 class ReplanRequest(BaseModel):
     plan_id: str
     new_goal: str | None = None
+
+class ExecuteStatusUpdate(BaseModel):
+    plan_id: str
+    status:  str                        # running | success | failure
+    step:    int | None = None
+    action:  str | None = None
+    success: bool | None = None
+    message: str = ""
 
 # ── Internal helpers ──────────────────────────────────────────────────────
 
@@ -184,6 +196,57 @@ def get_status(plan_id: str) -> dict[str, str]:
         raise HTTPException(status_code=404, detail="Plan not found")
     return {"plan_id": plan_id, "status": record.status.value,
             "updated": record.updated}
+
+
+@app.post("/execute/{plan_id}")
+def post_execute(plan_id: str, background_tasks: BackgroundTasks) -> dict[str, str]:
+    """Dispatch a plan to Agent 4 (Isaac Sim executor) in a background thread."""
+    record = _store.get(plan_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Plan not found")
+    if record.status not in (PlanStatus.PENDING, PlanStatus.FAILURE):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Plan already in status '{record.status.value}'"
+        )
+
+    record.status  = PlanStatus.RUNNING
+    record.updated = datetime.utcnow().isoformat()
+
+    def _run() -> None:
+        from isaac_executor import IsaacExecutor
+        executor = IsaacExecutor(plan_id=plan_id, mock=MOCK_ISAAC)
+        executor.run_plan(record.plan)
+
+    background_tasks.add_task(_run)
+    return {"plan_id": plan_id, "status": "running"}
+
+
+@app.post("/execute_status")
+def post_execute_status(update: ExecuteStatusUpdate) -> dict[str, str]:
+    """Receive per-step feedback from Agent 4 and update plan status."""
+    record = _store.get(update.plan_id)
+    if not record:
+        return {"status": "unknown_plan"}
+
+    if update.status == "success":
+        record.status = PlanStatus.SUCCESS
+    elif update.status == "failure":
+        record.status = PlanStatus.FAILURE
+    elif update.status == "running":
+        record.status = PlanStatus.RUNNING
+
+    record.updated = datetime.utcnow().isoformat()
+
+    # Log execution step into world_state for monitor visibility
+    if update.step is not None:
+        record.world_state[f"step_{update.step}"] = {
+            "action":  update.action,
+            "success": update.success,
+            "message": update.message,
+        }
+
+    return {"status": "ok"}
 
 
 @app.post("/replan")
