@@ -225,9 +225,7 @@ class IsaacSimExecutor:
             from isaacsim.core.api.world import World
             from isaacsim.robot.manipulators.examples.franka import Franka
             from isaacsim.core.api.objects import DynamicCuboid
-            from isaacsim.robot_motion.motion_generation import (
-                RmpFlow, ArticulationMotionPolicy
-            )
+            import isaacsim.robot_motion.motion_generation as mg
         except ImportError as e:
             raise RuntimeError(
                 "Isaac Sim 5.1 Python API not available. "
@@ -245,10 +243,7 @@ class IsaacSimExecutor:
 
         # Franka FR3 at origin
         self._robot = self._world.scene.add(
-            Franka(
-                prim_path="/World/Franka",
-                name="franka",
-            )
+            Franka(prim_path="/World/Franka", name="franka")
         )
 
         # Tabletop objects
@@ -276,18 +271,17 @@ class IsaacSimExecutor:
 
         self._world.reset()
 
-        # RMPflow motion planner (Isaac Sim 5.1 path)
-        rmpflow_config = RmpFlow(
-            robot_description_path=self._robot.rmpflow_robot_description_path,
-            rmpflow_config_path=self._robot.rmpflow_config_path,
-            urdf_path=self._robot.urdf_path,
-            end_effector_frame_name="panda_hand",
-            maximum_substep_size=0.00334,
+        # RMPflow — Isaac Sim 5.1: load config by robot name, no manual paths needed
+        rmpflow_cfg = mg.interface_config_loader.load_supported_motion_policy_config(
+            "Franka", "RMPflow"
         )
-        self._art_ctrl = ArticulationMotionPolicy(
-            self._robot, rmpflow_config, self._world.get_physics_dt()
+        self._rmpflow = mg.lula.motion_policies.RmpFlow(**rmpflow_cfg)
+        self._art_ctrl = mg.ArticulationMotionPolicy(
+            self._robot, self._rmpflow, self._world.get_physics_dt()
         )
-        self._rmpflow = rmpflow_config
+        # Anchor the planner to the robot's current world pose
+        robot_pos, robot_ori = self._robot.get_world_pose()
+        self._rmpflow.set_robot_base_pose(robot_pos, robot_ori)
 
     def _step_to_target(
         self,
