@@ -5,40 +5,40 @@
 ```mermaid
 flowchart TD
     User([User / Operator])
-    Hub["Agent Hub\n(FastAPI — agent_hub.py)\nPOST /goal"]
-    KG["Scene Knowledge Graph\n(knowledge_graph.py)\nNetworkX DiGraph"]
-    LLM["Agent 1 — LLM Reasoner\n(nl_to_pddl.py)\nOllama · LLaMA-3 8B"]
+    Hub["Agent Hub<br>(FastAPI — agent_hub.py)<br>POST /goal"]
+    KG["Scene Knowledge Graph<br>(knowledge_graph.py)<br>NetworkX DiGraph"]
+    LLM["Agent 1 — LLM Reasoner<br>(nl_to_pddl.py)<br>Ollama · LLaMA-3 8B"]
     VAL{PDDL valid?}
-    FB["Fallback Template\n(_build_fallback_pddl)"]
-    PDDL[(PDDL Problem\n.pddl string)]
-    DOM[(PDDL Domain\ntabletop.pddl)]
-    Parser["C++ PDDL Parser\n(pddl_parser.cpp)\nrecursive-descent"]
-    Ground["Grounder\n(pddl_parser.cpp)\ncross-product instantiation"]
-    AStar["Agent 2 — A* Planner\n(astar_planner.cpp)\nbitset state space"]
-    GA["GA Plan Ranker\n(ga_ranker.cpp)\nminimise steps + cost"]
-    PlanJSON[(JSON Plan\nactions list)]
-    Store["In-memory Plan Store\n(PlanRecord)"]
-    Isaac["Agent 4 — Isaac Sim 5.1\nROS2 Jazzy bridge\n(stub)"]
-    Monitor["Agent 3 — Monitor\nPOST /world_state"]
-    Replan["Replanner\nPOST /replan"]
+    FB["Fallback Template<br>(_build_fallback_pddl)"]
+    PDDL[(PDDL Problem<br>.pddl string)]
+    DOM[(PDDL Domain<br>tabletop.pddl)]
+    Parser["C++ PDDL Parser<br>(pddl_parser.cpp)<br>recursive-descent"]
+    Ground["Grounder<br>(pddl_parser.cpp)<br>cross-product instantiation"]
+    AStar["Agent 2 — A* Planner<br>(astar_planner.cpp)<br>bitset state space"]
+    GA["GA Plan Ranker<br>(ga_ranker.cpp)<br>minimise steps + cost"]
+    PlanJSON[(JSON Plan<br>actions list)]
+    Store["In-memory Plan Store<br>(PlanRecord)"]
+    Isaac["Agent 4 — Isaac Sim 5.1<br>ROS2 Jazzy bridge<br>(stub)"]
+    Monitor["Agent 3 — Monitor<br>POST /world_state"]
+    Replan["Replanner<br>POST /replan"]
 
-    User -->|"Natural-language goal\ne.g. 'Move red cube to zone C'"| Hub
+    User -->|"Natural-language goal<br>e.g. 'Move red cube to zone C'"| Hub
     Hub -->|to_scene_context| KG
-    KG -->|scene_context dict\n{robot, objects, locations}| LLM
-    LLM -->|few-shot prompted\nLLaMA-3 generate| VAL
+    KG -->|"scene_context dict<br>{robot, objects, locations}"| LLM
+    LLM -->|"few-shot prompted<br>LLaMA-3 generate"| VAL
     VAL -->|yes| PDDL
     VAL -->|no / LLM unavailable| FB
     FB --> PDDL
     DOM --> Parser
     PDDL --> Parser
     Parser --> Ground
-    Ground -->|grounded actions\n+ init/goal bitsets| AStar
+    Ground -->|"grounded actions<br>+ init/goal bitsets"| AStar
     AStar -->|optimal action sequence| GA
     GA -->|ranked plan| PlanJSON
     PlanJSON --> Store
     Store -->|plan_id + steps + cost| Hub
     Hub -->|GoalResponse| User
-    User -->|GET /plan/{id}| Store
+    User -->|"GET /plan/{id}"| Store
 
     Store -->|action sequence| Isaac
     Isaac -->|execution feedback| Monitor
