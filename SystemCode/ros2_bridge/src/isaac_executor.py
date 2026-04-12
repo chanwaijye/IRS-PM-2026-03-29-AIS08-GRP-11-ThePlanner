@@ -81,8 +81,11 @@ ZONE_POSITIONS: dict[str, tuple[float, float, float]] = {
     "zone_c": (0.5,  0.25, 0.025),   # front-right
 }
 
-# Pre-grasp hover height above object centre
-HOVER_Z_OFFSET = 0.20   # metres — high enough to clear 5 cm cube + clearance
+# Absolute z heights for the panda_hand link (palm), not the fingertip.
+# Franka finger length ≈ 0.103 m below panda_hand origin.
+# Cube centre at z = 0.025 m → hand grasp z ≈ 0.025 + 0.103 = 0.128 m.
+GRASP_Z  = 0.13   # hand z when fingers are around the cube (~0 m clearance to ground)
+HOVER_Z  = 0.35   # safe transit height (well above cubes and ground obstacles)
 
 # Franka FR3 joint configurations (radians)
 # Home: arm folded safe, gripper open
@@ -390,13 +393,20 @@ class IsaacSimExecutor:
     def execute_step(self, step: int, action: ParsedAction) -> StepResult:
         import numpy as np
 
+        def _hover(xy_pos):
+            """Safe transit position above any xy point."""
+            return np.array([xy_pos[0], xy_pos[1], HOVER_Z])
+
+        def _grasp(xy_pos):
+            """Hand position with fingers around a ground-level cube.
+            GRASP_Z places panda_hand ≈ 0.103 m above fingertip → fingers at cube centre.
+            """
+            return np.array([xy_pos[0], xy_pos[1], GRASP_Z])
+
         try:
             if action.atype == ActionType.MOVE_TO:
-                # Navigate robot base — in sim, move EEF to hover above target zone
-                target_pos = np.array(ZONE_POSITIONS.get(
-                    action.loc, ZONE_POSITIONS["zone_b"]
-                )) + np.array([0.0, 0.0, HOVER_Z_OFFSET])
-                ok = self._step_to_target(target_pos)
+                zone_pos = np.array(ZONE_POSITIONS.get(action.loc, ZONE_POSITIONS["zone_b"]))
+                ok = self._step_to_target(_hover(zone_pos))
 
             elif action.atype == ActionType.PICK:
                 obj_name = action.obj
@@ -406,48 +416,27 @@ class IsaacSimExecutor:
                                       f"Object '{obj_name}' not in scene")
                 obj_pos, _ = obj.get_world_pose()
 
-                # 1. Hover above object
-                hover = obj_pos + np.array([0.0, 0.0, HOVER_Z_OFFSET])
-                ok = self._step_to_target(hover)
+                ok = self._step_to_target(_hover(obj_pos))          # 1. hover
                 if not ok:
-                    return StepResult(step, action.raw, False, "Failed to reach hover")
-
-                # 2. Open gripper
-                self._open_gripper()
-
-                # 3. Descend to object
-                ok = self._step_to_target(obj_pos)
+                    return StepResult(step, action.raw, False, "Failed hover above object")
+                self._open_gripper()                                 # 2. open
+                ok = self._step_to_target(_grasp(obj_pos))          # 3. descend
                 if not ok:
-                    return StepResult(step, action.raw, False, "Failed to reach object")
-
-                # 4. Close gripper
-                self._close_gripper()
-
-                # 5. Lift
-                ok = self._step_to_target(hover)
+                    return StepResult(step, action.raw, False, "Failed to reach grasp height")
+                self._close_gripper()                                # 4. grasp
+                ok = self._step_to_target(_hover(obj_pos))          # 5. lift
 
             elif action.atype == ActionType.PLACE:
-                target_zone = action.loc
-                target_pos = np.array(ZONE_POSITIONS.get(
-                    target_zone, ZONE_POSITIONS["zone_b"]
-                ))
-                hover = target_pos + np.array([0.0, 0.0, HOVER_Z_OFFSET])
+                zone_pos = np.array(ZONE_POSITIONS.get(action.loc, ZONE_POSITIONS["zone_b"]))
 
-                # 1. Move to hover above target
-                ok = self._step_to_target(hover)
+                ok = self._step_to_target(_hover(zone_pos))         # 1. hover over target
                 if not ok:
-                    return StepResult(step, action.raw, False, "Failed to reach target hover")
-
-                # 2. Descend
-                ok = self._step_to_target(target_pos)
+                    return StepResult(step, action.raw, False, "Failed hover above target")
+                ok = self._step_to_target(_grasp(zone_pos))         # 2. descend
                 if not ok:
-                    return StepResult(step, action.raw, False, "Failed to reach place target")
-
-                # 3. Open gripper (release)
-                self._open_gripper()
-
-                # 4. Retreat upward
-                ok = self._step_to_target(hover)
+                    return StepResult(step, action.raw, False, "Failed to reach place height")
+                self._open_gripper()                                 # 3. release
+                ok = self._step_to_target(_hover(zone_pos))         # 4. retreat
 
             elif action.atype == ActionType.STACK:
                 bottom_name = action.obj_bottom
@@ -456,17 +445,18 @@ class IsaacSimExecutor:
                     return StepResult(step, action.raw, False,
                                       f"Bottom object '{bottom_name}' not in scene")
                 bottom_pos, _ = bottom.get_world_pose()
-                stack_pos = bottom_pos + np.array([0.0, 0.0, 0.06])  # object height
-                hover = stack_pos + np.array([0.0, 0.0, HOVER_Z_OFFSET])
+                # Place on top of the bottom cube (add one cube height)
+                stack_xy = bottom_pos + np.array([0.0, 0.0, 0.0])
+                stack_z  = np.array([bottom_pos[0], bottom_pos[1], GRASP_Z + 0.055])
 
-                ok = self._step_to_target(hover)
+                ok = self._step_to_target(_hover(bottom_pos))
                 if not ok:
-                    return StepResult(step, action.raw, False, "Failed to reach stack hover")
-                ok = self._step_to_target(stack_pos)
+                    return StepResult(step, action.raw, False, "Failed hover for stack")
+                ok = self._step_to_target(stack_z)
                 if not ok:
-                    return StepResult(step, action.raw, False, "Failed to reach stack pos")
+                    return StepResult(step, action.raw, False, "Failed stack descent")
                 self._open_gripper()
-                ok = self._step_to_target(hover)
+                ok = self._step_to_target(_hover(bottom_pos))
 
             elif action.atype == ActionType.UNSTACK:
                 top_name = action.obj
@@ -475,13 +465,12 @@ class IsaacSimExecutor:
                     return StepResult(step, action.raw, False,
                                       f"Top object '{top_name}' not in scene")
                 top_pos, _ = top.get_world_pose()
-                hover = top_pos + np.array([0.0, 0.0, HOVER_Z_OFFSET])
 
-                ok = self._step_to_target(hover)
+                ok = self._step_to_target(_hover(top_pos))
                 self._open_gripper()
-                ok = self._step_to_target(top_pos)
+                ok = self._step_to_target(_grasp(top_pos))
                 self._close_gripper()
-                ok = self._step_to_target(hover)
+                ok = self._step_to_target(_hover(top_pos))
 
             else:
                 return StepResult(step, action.raw, False,
