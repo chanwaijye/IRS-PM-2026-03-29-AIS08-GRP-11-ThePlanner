@@ -224,13 +224,14 @@ class IsaacSimExecutor:
 
     def _init_sim(self) -> None:
         # ── Isaac Sim 5.1 API (isaacsim.* namespace) ──────────────────────────
-        # SimulationApp MUST be created before any other omni.* imports.
-        # It is created in __main__ (GUI mode) or here for headless use.
+        # SimulationApp MUST be created before any other omni.* imports —
+        # done in __main__ before IsaacSimExecutor is constructed.
         try:
             import numpy as np
             from isaacsim.core.api.world import World
             from isaacsim.robot.manipulators.examples.franka import Franka
             from isaacsim.core.api.objects import DynamicCuboid
+            from isaacsim.core.utils.viewports import set_camera_view
             import isaacsim.robot_motion.motion_generation as mg
         except ImportError as e:
             raise RuntimeError(
@@ -244,10 +245,21 @@ class IsaacSimExecutor:
 
         self._world = World(stage_units_in_meters=1.0)
 
-        # Ground plane
+        # Ground plane + table surface visual
         self._world.scene.add_default_ground_plane()
 
-        # Franka FR3 at origin
+        # Position camera to look at the tabletop scene from the front-left
+        if self._render:
+            try:
+                set_camera_view(
+                    eye=np.array([1.5, -1.5, 1.8]),    # camera position (m)
+                    target=np.array([0.0, 0.0, 0.77]),  # look at table surface centre
+                    camera_prim_path="/OmniverseKit_Persp",
+                )
+            except Exception:
+                pass  # non-fatal if viewport not ready yet
+
+        # Franka FR3 at origin — USD fetched from NVIDIA S3 on first run
         self._robot = self._world.scene.add(
             Franka(prim_path="/World/Franka", name="franka")
         )
@@ -275,9 +287,20 @@ class IsaacSimExecutor:
             )
             self._objects[obj_name] = obj
 
+        # reset() initialises physics and calls initialize() on all scene objects
         self._world.reset()
 
-        # RMPflow — Isaac Sim 5.1: load config by robot name, no manual paths needed
+        # play() starts the simulation — required before world.step() does anything
+        self._world.play()
+
+        # Warm-up: render frames so USD assets (Franka from S3) fully appear
+        log.info("Warming up scene (%d frames)…", 60)
+        for _ in range(60):
+            self._world.step(render=self._render)
+            if self._render:
+                time.sleep(ISAAC_STEP_SLEEP)
+
+        # RMPflow — load config by robot name (no manual paths needed in 5.1)
         rmpflow_cfg = mg.interface_config_loader.load_supported_motion_policy_config(
             "Franka", "RMPflow"
         )
@@ -285,9 +308,10 @@ class IsaacSimExecutor:
         self._art_ctrl = mg.ArticulationMotionPolicy(
             self._robot, self._rmpflow, self._world.get_physics_dt()
         )
-        # Anchor the planner to the robot's current world pose
+        # Anchor planner to robot's world pose
         robot_pos, robot_ori = self._robot.get_world_pose()
         self._rmpflow.set_robot_base_pose(robot_pos, robot_ori)
+        log.info("Scene ready — robot at %s", robot_pos)
 
     def _step_to_target(
         self,
